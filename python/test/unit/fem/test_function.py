@@ -16,7 +16,9 @@ from dolfinx.fem import (Function, FunctionSpace, TensorFunctionSpace,
                          VectorFunctionSpace)
 from dolfinx.geometry import (BoundingBoxTree, compute_colliding_cells,
                               compute_collisions)
-from dolfinx.mesh import create_mesh, create_unit_cube
+from dolfinx.mesh import (create_mesh, create_unit_square, create_rectangle,
+                          create_unit_cube, create_box, locate_entities,
+                          create_submesh, GhostMode)
 
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -219,3 +221,44 @@ def test_interpolation_function(mesh):
     uh = Function(Vh)
     uh.interpolate(u)
     assert np.allclose(uh.x.array, 1)
+
+
+def check_norms(mesh, space, k, f_expr):
+    V = FunctionSpace(mesh, (space, k))
+    f = Function(V)
+    f.interpolate(f_expr)
+    f.x.scatter_forward()
+    return f.vector.norm()
+
+
+@pytest.mark.parametrize("d", [2, 3])
+@pytest.mark.parametrize("n", [2, 6])
+@pytest.mark.parametrize("k", [1, 4])
+# TODO RT
+@pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange"])
+@pytest.mark.parametrize("ghost_mode", [GhostMode.none,
+                                        GhostMode.shared_facet])
+def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
+    if d == 2:
+        mesh = create_unit_square(
+            MPI.COMM_WORLD, n, n, ghost_mode=ghost_mode)
+        mesh_1 = create_rectangle(
+            MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
+            ghost_mode=ghost_mode)
+    else:
+        mesh = create_unit_cube(
+            MPI.COMM_WORLD, n, n, n, ghost_mode=ghost_mode)
+        mesh_1 = create_box(
+            MPI.COMM_WORLD, ((0.0, 0.0, 0.0), (2.0, 1.0, 1.0)),
+            (2 * n, n, n), ghost_mode=ghost_mode)
+
+    edim = mesh_1.topology.dim
+    entities = locate_entities(mesh_1, edim, lambda x: x[0] <= 1.0)
+    submesh = create_submesh(mesh_1, edim, entities)[0]
+
+    def f_expr(x): return x[0]**2
+
+    norm_mesh = check_norms(mesh, space, k, f_expr)
+    norm_submesh = check_norms(submesh, space, k, f_expr)
+
+    assert(np.isclose(norm_mesh, norm_submesh))
