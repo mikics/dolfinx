@@ -18,7 +18,7 @@ from dolfinx.geometry import (BoundingBoxTree, compute_colliding_cells,
                               compute_collisions)
 from dolfinx.mesh import (create_mesh, create_unit_square, create_rectangle,
                           create_unit_cube, create_box, locate_entities,
-                          create_submesh, GhostMode)
+                          locate_entities_boundary, create_submesh, GhostMode)
 
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -272,3 +272,42 @@ def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
     norm_submesh = f_submesh.vector.norm()
 
     assert(np.isclose(norm_mesh, norm_submesh))
+
+
+@pytest.mark.parametrize("n", [2, 6])
+@pytest.mark.parametrize("k", [1, 4])
+@pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange"])
+@pytest.mark.parametrize("ghost_mode", [GhostMode.none,
+                                        GhostMode.shared_facet])
+def test_interpolation_submesh_codim_1(n, k, space, ghost_mode):
+    """Test that interpolating on the face of a unit cube gives
+    the same result as assembling it over a unit square."""
+    cube_mesh = create_unit_cube(
+        MPI.COMM_WORLD, n, n, n, ghost_mode=ghost_mode)
+    edim = cube_mesh.topology.dim - 1
+    entities = locate_entities_boundary(
+        cube_mesh, edim, lambda x: np.isclose(x[2], 0.0))
+    submesh = create_submesh(cube_mesh, edim, entities)[0]
+
+    square_mesh = create_unit_square(
+        MPI.COMM_WORLD, n, n, ghost_mode=ghost_mode)
+
+    V_square_mesh = FunctionSpace(square_mesh, (space, k))
+    V_submesh = FunctionSpace(submesh, (space, k))
+
+    f_square_mesh = Function(V_square_mesh)
+    f_submesh = Function(V_submesh)
+
+    def f_expr(x):
+        return x[0]**2
+
+    f_square_mesh.interpolate(f_expr)
+    f_submesh.interpolate(f_expr)
+    # TODO Comment, might even be needed for GhostMode.shared_facet
+    f_submesh.vector.ghostUpdate(addv=PETSc.InsertMode.MAX_VALUES,
+                                 mode=PETSc.ScatterMode.REVERSE)
+
+    norm_square_mesh = f_square_mesh.vector.norm()
+    norm_submesh = f_submesh.vector.norm()
+
+    assert(np.isclose(norm_square_mesh, norm_submesh))
