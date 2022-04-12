@@ -176,11 +176,6 @@ public:
       const std::function<xt::xarray<T>(const xt::xtensor<double, 2>&)>& f,
       const xtl::span<const std::int32_t>& cells)
   {
-    if (cells.size() == 0)
-    {
-      return;
-    }
-
     assert(_function_space);
     assert(_function_space->element());
     assert(_function_space->mesh());

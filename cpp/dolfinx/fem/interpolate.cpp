@@ -18,6 +18,11 @@ fem::interpolation_coords(const fem::FiniteElement& element,
                           const mesh::Mesh& mesh,
                           const xtl::span<const std::int32_t>& cells)
 {
+  if (cells.size() == 0)
+  {
+    return xt::zeros<double>({3, 0});
+  }
+
   // Get mesh geometry data and the element coordinate map
   const std::size_t gdim = mesh.geometry().dim();
   const graph::AdjacencyList<std::int32_t>& x_dofmap = mesh.geometry().dofmap();
