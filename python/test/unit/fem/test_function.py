@@ -227,8 +227,8 @@ def check_norms(mesh, space, k, f_expr):
     V = FunctionSpace(mesh, (space, k))
     f = Function(V)
     f.interpolate(f_expr)
-    f.x.scatter_forward()
-    return f.vector.norm()
+
+    return f
 
 
 @pytest.mark.parametrize("d", [2, 3])
@@ -258,7 +258,13 @@ def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
 
     def f_expr(x): return x[0]**2
 
-    norm_mesh = check_norms(mesh, space, k, f_expr)
-    norm_submesh = check_norms(submesh, space, k, f_expr)
+    f_mesh = check_norms(mesh, space, k, f_expr)
+    f_submesh = check_norms(submesh, space, k, f_expr)
+    # TODO Comment
+    f_submesh.vector.ghostUpdate(addv=PETSc.InsertMode.MAX_VALUES,
+                                 mode=PETSc.ScatterMode.REVERSE)
+
+    norm_mesh = f_mesh.vector.norm()
+    norm_submesh = f_submesh.vector.norm()
 
     assert(np.isclose(norm_mesh, norm_submesh))
