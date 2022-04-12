@@ -226,7 +226,7 @@ def test_interpolation_function(mesh):
 @pytest.mark.parametrize("d", [2, 3])
 @pytest.mark.parametrize("n", [2, 6])
 @pytest.mark.parametrize("k", [1, 4])
-# TODO RT
+# FIXME Nedelec
 @pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange",
                                    "Raviart-Thomas"])
 @pytest.mark.parametrize("ghost_mode", [GhostMode.none,
