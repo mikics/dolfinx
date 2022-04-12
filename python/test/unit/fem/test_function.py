@@ -232,14 +232,17 @@ def test_interpolation_function(mesh):
 @pytest.mark.parametrize("ghost_mode", [GhostMode.none,
                                         GhostMode.shared_facet])
 def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
+    """Check that interpolating on a unit square gives the same
+    result as assembling over half of a 2x1 rectangle with the same
+    triangulation."""
     if d == 2:
-        mesh = create_unit_square(
+        mesh_0 = create_unit_square(
             MPI.COMM_WORLD, n, n, ghost_mode=ghost_mode)
         mesh_1 = create_rectangle(
             MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
             ghost_mode=ghost_mode)
     else:
-        mesh = create_unit_cube(
+        mesh_0 = create_unit_cube(
             MPI.COMM_WORLD, n, n, n, ghost_mode=ghost_mode)
         mesh_1 = create_box(
             MPI.COMM_WORLD, ((0.0, 0.0, 0.0), (2.0, 1.0, 1.0)),
@@ -249,27 +252,30 @@ def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
     entities = locate_entities(mesh_1, edim, lambda x: x[0] <= 1.0)
     submesh = create_submesh(mesh_1, edim, entities)[0]
 
-    V_mesh = FunctionSpace(mesh, (space, k))
-    V_submesh = FunctionSpace(submesh, (space, k))
+    V_m = FunctionSpace(mesh_0, (space, k))
+    V_sm = FunctionSpace(submesh, (space, k))
 
-    f_mesh = Function(V_mesh)
-    f_submesh = Function(V_submesh)
+    f_m = Function(V_m)
+    f_sm = Function(V_sm)
 
     if space == "Raviart-Thomas":
         def f_expr(x):
-            return np.vstack([x[0]**2 for i in range(mesh.topology.dim)])
+            return np.vstack([x[0]**2 for i in range(mesh_0.topology.dim)])
     else:
         def f_expr(x):
             return x[0]**2
 
-    f_mesh.interpolate(f_expr)
-    f_submesh.interpolate(f_expr)
-    # TODO Comment, only needed for GhostMode.none
-    f_submesh.vector.ghostUpdate(addv=PETSc.InsertMode.MAX_VALUES,
-                                 mode=PETSc.ScatterMode.REVERSE)
+    f_m.interpolate(f_expr)
+    f_sm.interpolate(f_expr)
+    # On a submesh, a process may own some dofs but have no cells. Since
+    # interpolation is carried out cellwise, these dofs will not be set on the
+    # owning process. HACK Communicate these values back to their owners
+    # FIXME This won't work for negative values... Could set to -inf etc.
+    f_sm.vector.ghostUpdate(addv=PETSc.InsertMode.MAX_VALUES,
+                            mode=PETSc.ScatterMode.REVERSE)
 
-    norm_mesh = f_mesh.vector.norm()
-    norm_submesh = f_submesh.vector.norm()
+    norm_mesh = f_m.vector.norm()
+    norm_submesh = f_sm.vector.norm()
 
     assert(np.isclose(norm_mesh, norm_submesh))
 
@@ -303,7 +309,6 @@ def test_interpolation_submesh_codim_1(n, k, space, ghost_mode):
 
     f_square_mesh.interpolate(f_expr)
     f_submesh.interpolate(f_expr)
-    # TODO Comment, might even be needed for GhostMode.shared_facet
     f_submesh.vector.ghostUpdate(addv=PETSc.InsertMode.MAX_VALUES,
                                  mode=PETSc.ScatterMode.REVERSE)
 
