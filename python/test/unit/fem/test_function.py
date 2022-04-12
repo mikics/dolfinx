@@ -223,19 +223,12 @@ def test_interpolation_function(mesh):
     assert np.allclose(uh.x.array, 1)
 
 
-def check_norms(mesh, space, k, f_expr):
-    V = FunctionSpace(mesh, (space, k))
-    f = Function(V)
-    f.interpolate(f_expr)
-
-    return f
-
-
 @pytest.mark.parametrize("d", [2, 3])
 @pytest.mark.parametrize("n", [2, 6])
 @pytest.mark.parametrize("k", [1, 4])
 # TODO RT
-@pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange"])
+@pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange",
+                                   "Raviart-Thomas"])
 @pytest.mark.parametrize("ghost_mode", [GhostMode.none,
                                         GhostMode.shared_facet])
 def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
@@ -256,11 +249,22 @@ def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
     entities = locate_entities(mesh_1, edim, lambda x: x[0] <= 1.0)
     submesh = create_submesh(mesh_1, edim, entities)[0]
 
-    def f_expr(x): return x[0]**2
+    V_mesh = FunctionSpace(mesh, (space, k))
+    V_submesh = FunctionSpace(submesh, (space, k))
 
-    f_mesh = check_norms(mesh, space, k, f_expr)
-    f_submesh = check_norms(submesh, space, k, f_expr)
-    # TODO Comment
+    f_mesh = Function(V_mesh)
+    f_submesh = Function(V_submesh)
+
+    if space == "Raviart-Thomas":
+        def f_expr(x):
+            return np.vstack([x[0]**2 for i in range(mesh.topology.dim)])
+    else:
+        def f_expr(x):
+            return x[0]**2
+
+    f_mesh.interpolate(f_expr)
+    f_submesh.interpolate(f_expr)
+    # TODO Comment, only needed for GhostMode.none
     f_submesh.vector.ghostUpdate(addv=PETSc.InsertMode.MAX_VALUES,
                                  mode=PETSc.ScatterMode.REVERSE)
 
