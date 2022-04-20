@@ -24,7 +24,8 @@ from petsc4py import PETSc
 
 class FormMetaClass:
     def __init__(self, form, V: list[_cpp.fem.FunctionSpace], coeffs, constants,
-                 subdomains: dict[_cpp.mesh.MeshTags_int32], mesh: _cpp.mesh.Mesh, code):
+                 subdomains: dict[_cpp.mesh.MeshTags_int32], mesh: _cpp.mesh.Mesh, code,
+                 restrictions: dict[_cpp.mesh.MeshTags_int32], restrictions_id: dict):
         """A finite element form
 
         Notes:
@@ -46,7 +47,7 @@ class FormMetaClass:
         self._ufcx_form = form
         ffi = cffi.FFI()
         super().__init__(ffi.cast("uintptr_t", ffi.addressof(self._ufcx_form)),
-                         V, coeffs, constants, subdomains, mesh)
+                         V, coeffs, constants, subdomains, mesh, restrictions, restrictions_id)
 
     @property
     def ufcx_form(self):
@@ -105,6 +106,24 @@ def form(form: typing.Union[ufl.Form, typing.Iterable[ufl.Form]], dtype: np.dtyp
         if mesh is None:
             raise RuntimeError("Expecting to find a Mesh in the form.")
 
+        restrictions = {}
+        restrictions_id = {}
+        for integral in form.integrals():
+            res = integral.metadata().pop("restriction", None)
+            res_id = integral.metadata().pop("restriction_id", None)
+            it = integral.integral_type()
+            if restrictions.get(it) is None:
+                restrictions[it] = res
+                try:
+                    restrictions_id[it] = list(res_id)
+                except TypeError:
+                    restrictions_id[it] = [res_id]
+            else:
+                if restrictions[it] != res:
+                    raise RuntimeError(f"Can only do the same restriction over the whole {it} integral")
+                if restrictions_id[it] != res_id:
+                    raise RuntimeError(f"Can only do the same restriction with the same id for all domains")
+
         ufcx_form, module, code = jit.ffcx_jit(mesh.comm, form,
                                                form_compiler_params=form_compiler_params,
                                                jit_params=jit_params)
@@ -124,8 +143,13 @@ def form(form: typing.Union[ufl.Form, typing.Iterable[ufl.Form]], dtype: np.dtyp
                       _cpp.fem.IntegralType.exterior_facet: subdomains.get("exterior_facet"),
                       _cpp.fem.IntegralType.interior_facet: subdomains.get("interior_facet"),
                       _cpp.fem.IntegralType.vertex: subdomains.get("vertex")}
-
-        return formcls(ufcx_form, V, coeffs, constants, subdomains, mesh, code)
+        # Restriction markers
+        restrictions = {_cpp.fem.IntegralType.exterior_facet: restrictions.get("exterior_facet")}
+        # , _cpp.fem.IntegralType.interior_facet: restrictions.get("interior_facet")
+        # Restriction ids
+        restrictions_id = {_cpp.fem.IntegralType.exterior_facet: restrictions_id.get("exterior_facet")}
+        # , _cpp.fem.IntegralType.interior_facet: restrictions_id.get("interior_facet")
+        return formcls(ufcx_form, V, coeffs, constants, subdomains, mesh, code, restrictions, restrictions_id)
 
     def _create_form(form):
         """Recursively convert ufl.Forms to dolfinx.fem.Form, otherwise

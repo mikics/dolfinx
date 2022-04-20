@@ -797,7 +797,12 @@ void declare_form(py::module& m, const std::string& type)
                   const std::map<dolfinx::fem::IntegralType,
                                  const dolfinx::mesh::MeshTags<int>*>&
                       subdomains,
-                  const std::shared_ptr<const dolfinx::mesh::Mesh>& mesh)
+                  const std::shared_ptr<const dolfinx::mesh::Mesh>& mesh,
+                  const std::map<dolfinx::fem::IntegralType,
+                                 const dolfinx::mesh::MeshTags<int>*>&
+                      restrictions,
+                  const std::map<dolfinx::fem::IntegralType,
+                                 const std::vector<int>*>& restrictions_id)
                {
                  ufcx_form* p = reinterpret_cast<ufcx_form*>(form);
                  return dolfinx::fem::create_form<T>(
