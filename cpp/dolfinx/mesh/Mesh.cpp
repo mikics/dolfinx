@@ -437,3 +437,8 @@ const Geometry& Mesh::geometry() const { return _geometry; }
 //-----------------------------------------------------------------------------
 MPI_Comm Mesh::comm() const { return _comm.comm(); }
 //-----------------------------------------------------------------------------
+const std::vector<std::int32_t>& Mesh::entity_map() const
+{
+  return _entity_map;
+};
+//-----------------------------------------------------------------------------

@@ -37,9 +37,11 @@ public:
   /// @param[in] topology Mesh topology
   /// @param[in] geometry Mesh geometry
   template <typename Topology, typename Geometry>
-  Mesh(MPI_Comm comm, Topology&& topology, Geometry&& geometry)
+  Mesh(MPI_Comm comm, Topology&& topology, Geometry&& geometry,
+       std::vector<std::int32_t> entity_map = {})
       : _topology(std::forward<Topology>(topology)),
-        _geometry(std::forward<Geometry>(geometry)), _comm(comm)
+        _geometry(std::forward<Geometry>(geometry)),
+        _comm(comm), _entity_map(entity_map)
   {
     // Do nothing
   }
@@ -89,6 +91,8 @@ public:
   /// @return The communicator on which the mesh is distributed
   MPI_Comm comm() const;
 
+  const std::vector<std::int32_t>& entity_map() const;
+
   /// Name
   std::string name = "mesh";
 
@@ -105,6 +109,9 @@ private:
 
   // MPI communicator
   dolfinx::MPI::Comm _comm;
+
+  // TODO Implement properly
+  std::vector<std::int32_t> _entity_map;
 };
 
 /// @brief Create a mesh using the default partitioner.
