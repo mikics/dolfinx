@@ -226,9 +226,7 @@ def test_interpolation_function(mesh):
 @pytest.mark.parametrize("d", [2, 3])
 @pytest.mark.parametrize("n", [2, 6])
 @pytest.mark.parametrize("k", [1, 4])
-# FIXME Nedelec
-@pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange",
-                                   "Raviart-Thomas"])
+@pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange"])
 @pytest.mark.parametrize("ghost_mode", [GhostMode.none,
                                         GhostMode.shared_facet])
 def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
@@ -258,12 +256,8 @@ def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
     f_m = Function(V_m)
     f_sm = Function(V_sm)
 
-    if space == "Raviart-Thomas":
-        def f_expr(x):
-            return np.vstack([x[0]**2 for i in range(mesh_0.topology.dim)])
-    else:
-        def f_expr(x):
-            return x[0]**2
+    def f_expr(x):
+        return x[0]**2
 
     f_m.interpolate(f_expr)
     f_sm.interpolate(f_expr)
@@ -271,6 +265,7 @@ def test_interpolation_submesh_codim_0(d, n, k, space, ghost_mode):
     # interpolation is carried out cellwise, these dofs will not be set on the
     # owning process. HACK Communicate these values back to their owners
     # FIXME This won't work for negative values... Could set to -inf etc.
+    # FIXME This won't work in complex
     f_sm.vector.ghostUpdate(addv=PETSc.InsertMode.MAX_VALUES,
                             mode=PETSc.ScatterMode.REVERSE)
 
