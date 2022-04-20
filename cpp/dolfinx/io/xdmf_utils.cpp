@@ -477,40 +477,89 @@ xdmf_utils::distribute_entity_data(
   //    this rank is the postmaster
 
   auto postmaster_global_nodes_sendrecv = [](const mesh::Mesh& mesh)
+      -> std::pair<graph::AdjacencyList<std::int64_t>, std::vector<int>>
   {
-    const MPI_Comm comm = mesh.comm();
-    const int comm_size = dolfinx::MPI::size(comm);
+    MPI_Comm comm = mesh.comm();
+    int comm_size = dolfinx::MPI::size(comm);
 
     // Get "input" global node indices (as in the input file before any
     // internal re-ordering)
-    const std::vector<std::int64_t>& nodes_g
+    const std::vector<std::int64_t>& nodes
         = mesh.geometry().input_global_indices();
 
     // Send input global indices to 'post master' rank, based on input
     // global index value
-    const std::int64_t num_nodes_g = mesh.geometry().index_map()->size_global();
-    // NOTE: could make this int32_t be sending: index <- index -
-    // dest_rank_offset
-    std::vector<std::vector<std::int64_t>> nodes_g_send(comm_size);
-    for (std::int64_t node : nodes_g)
+    const std::int64_t num_nodes = mesh.geometry().index_map()->size_global();
+
+    std::vector<std::pair<int, std::int64_t>> nodes_send;
+    nodes_send.reserve(nodes.size());
+    for (std::int64_t node : nodes)
     {
-      // Figure out which process is the postmaster for the input global
-      // index
-      const std::int32_t p
-          = dolfinx::MPI::index_owner(comm_size, node, num_nodes_g);
-      nodes_g_send[p].push_back(node);
+      int d = dolfinx::MPI::index_owner(comm_size, node, num_nodes);
+      nodes_send.push_back({d, node});
+    }
+    std::sort(nodes_send.begin(), nodes_send.end());
+    nodes_send.erase(std::unique(nodes_send.begin(), nodes_send.end()),
+                     nodes_send.end());
+
+    // Pack send buffer
+    std::vector<std::int64_t> send_buffer;
+    send_buffer.reserve(nodes_send.size());
+    std::transform(nodes_send.begin(), nodes_send.end(),
+                   std::back_inserter(send_buffer),
+                   [](auto& x) { return x.second; });
+
+    // Determine destination ranks and send sizes
+    std::vector<int> dest, send_sizes;
+    auto it = nodes_send.begin();
+    while (it != nodes_send.end())
+    {
+      dest.push_back(it->first);
+
+      // FIXME: Is there a STL function for counting?
+      auto it1 = std::find_if_not(it, nodes_send.end(),
+                                  [p0 = it->first](auto p1) -> bool
+                                  { return p0 == p1.first; });
+      send_sizes.push_back(std::distance(nodes_send.begin(), it1));
+      it = it1;
     }
 
-    // Send/receive
-    LOG(INFO) << "XDMF send entity nodes size:(" << num_nodes_g << ")";
-    graph::AdjacencyList<std::int64_t> nodes_g_recv
-        = all_to_all(comm, graph::AdjacencyList<std::int64_t>(nodes_g_send));
+    // Send displacements
+    std::vector<int> send_disp(send_sizes.size() + 1, 0);
+    std::partial_sum(send_sizes.begin(), send_sizes.end(),
+                     std::next(send_disp.begin()));
 
-    return nodes_g_recv;
+    // Determine source ranks
+    auto src = dolfinx::MPI::compute_graph_edges_nbx(comm, dest);
+
+    // Create neighbourhood communicator for postoffices
+    MPI_Comm comm0;
+    MPI_Dist_graph_create_adjacent(comm, src.size(), src.data(), MPI_UNWEIGHTED,
+                                   dest.size(), dest.data(), MPI_UNWEIGHTED,
+                                   MPI_INFO_NULL, false, &comm0);
+
+    std::vector<int> recv_sizes(src.size());
+    send_sizes.reserve(1);
+    recv_sizes.reserve(1);
+    MPI_Neighbor_alltoall(send_sizes.data(), 1, MPI_INT, recv_sizes.data(), 1,
+                          MPI_INT, comm0);
+
+    std::vector<int> recv_disp(recv_sizes.size() + 1, 0);
+    std::partial_sum(recv_sizes.begin(), recv_sizes.end(),
+                     std::next(recv_disp.begin()));
+
+    std::vector<std::int64_t> recv_buffer(recv_disp.back());
+    MPI_Neighbor_alltoallv(send_buffer.data(), send_sizes.data(),
+                           send_disp.data(), MPI_INT64_T, recv_buffer.data(),
+                           recv_sizes.data(), recv_disp.data(), MPI_INT64_T,
+                           comm0);
+
+    return {graph::AdjacencyList<std::int64_t>(std::move(recv_buffer),
+                                               std::move(recv_disp)),
+            src};
   };
 
-  const graph::AdjacencyList<std::int64_t> nodes_g_recv
-      = postmaster_global_nodes_sendrecv(mesh);
+  const auto [nodes_g_recv, src] = postmaster_global_nodes_sendrecv(mesh);
 
   // -------------------
   // 2. Send the entity key (nodes list) and tag to the postmaster based

@@ -37,6 +37,7 @@ compute_ghost_owners(const std::vector<int>& ghost_pos_recv_fwd,
 //----------------------------------------------------------------------------
 
 /// Compute the owning rank of ghost indices
+/// @warning Use for debug only
 [[maybe_unused]] std::vector<int>
 get_ghost_ranks(MPI_Comm comm, std::int32_t local_size,
                 const xtl::span<const std::int64_t>& ghosts)
