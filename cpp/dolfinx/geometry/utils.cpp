@@ -13,6 +13,7 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
+#include <xtensor/xadapt.hpp>
 #include <xtensor/xfixed.hpp>
 #include <xtensor/xnorm.hpp>
 #include <xtensor/xview.hpp>
@@ -29,11 +30,11 @@ constexpr bool is_leaf(const std::array<int, 2>& bbox)
   return bbox[0] == bbox[1];
 }
 //-----------------------------------------------------------------------------
-/// A point `x` is inside a bounding box `b` if each component of its coordinates
-/// lies within the range `[b(0,i), b(1,i)]` that defines the bounds of the
-/// bounding box, b(0,i) <= x[i] <= b(1,i) for i = 0, 1, 2
+/// A point `x` is inside a bounding box `b` if each component of its
+/// coordinates lies within the range `[b(0,i), b(1,i)]` that defines the bounds
+/// of the bounding box, b(0,i) <= x[i] <= b(1,i) for i = 0, 1, 2
 bool point_in_bbox(const xt::xtensor_fixed<double, xt::xshape<2, 3>>& b,
-                   const xt::xtensor_fixed<double, xt::xshape<3>>& x)
+                   const std::array<double, 3>& x)
 {
   constexpr double rtol = 1e-14;
   double eps;
@@ -69,11 +70,9 @@ bool bbox_in_bbox(const xt::xtensor_fixed<double, xt::xshape<2, 3>>& a,
 }
 //-----------------------------------------------------------------------------
 // Compute closest entity {closest_entity, R2} (recursive)
-std::pair<std::int32_t, double>
-_compute_closest_entity(const geometry::BoundingBoxTree& tree,
-                        const xt::xtensor_fixed<double, xt::xshape<3>>& point,
-                        int node, const mesh::Mesh& mesh,
-                        std::int32_t closest_entity, double R2)
+std::pair<std::int32_t, double> _compute_closest_entity(
+    const geometry::BoundingBoxTree& tree, const std::array<double, 3>& point,
+    int node, const mesh::Mesh& mesh, std::int32_t closest_entity, double R2)
 {
   // Get children of current bounding box node (child_1 denotes entity
   // index for leaves)
@@ -86,7 +85,8 @@ _compute_closest_entity(const geometry::BoundingBoxTree& tree,
     {
       xt::xtensor_fixed<double, xt::xshape<3>> diff
           = xt::row(tree.get_bbox(node), 0);
-      diff -= point;
+      for (int i = 0; i < 3; i++)
+        diff[i] -= point[i];
       r2 = xt::norm_sq(diff)();
     }
     else
@@ -96,9 +96,10 @@ _compute_closest_entity(const geometry::BoundingBoxTree& tree,
       // obtain exact distance to the convex hull of the entity
       if (r2 <= R2)
       {
+
         r2 = geometry::squared_distance(mesh, tree.tdim(),
                                         xtl::span(&bbox[1], 1),
-                                        xt::reshape_view(point, {1, 3}))[0];
+                                        xt::adapt(point, {3}))[0];
       }
     }
 
@@ -133,10 +134,9 @@ _compute_closest_entity(const geometry::BoundingBoxTree& tree,
 /// @param[in] tree The bounding box tree
 /// @param[in] points The points (shape=(num_points, 3))
 /// @param[in, out] entities The list of colliding entities (local to process)
-void _compute_collisions_point(
-    const geometry::BoundingBoxTree& tree,
-    const xt::xtensor_fixed<double, xt::xshape<3>>& p,
-    std::vector<int>& entities)
+void _compute_collisions_point(const geometry::BoundingBoxTree& tree,
+                               const std::array<double, 3>& p,
+                               std::vector<int>& entities)
 {
   std::deque<std::int32_t> stack;
   int next = tree.num_bboxes() - 1;
@@ -287,9 +287,11 @@ geometry::compute_collisions(const BoundingBoxTree& tree,
   {
     std::vector<std::int32_t> entities, offsets(points.shape(0) + 1, 0);
     entities.reserve(points.shape(0));
+    std::array<double, 3> point;
     for (std::size_t p = 0; p < points.shape(0); ++p)
     {
-      _compute_collisions_point(tree, xt::row(points, p), entities);
+      point = {points(p, 0), points(p, 1), points(p, 2)};
+      _compute_collisions_point(tree, point, entities);
       offsets[p + 1] = entities.size();
     }
 
@@ -335,9 +337,10 @@ std::vector<std::int32_t> geometry::compute_closest_entity(
       // to find determine the entity with the closest midpoint.
       // As the midpoint tree only consist of points, the distance
       // queries are lightweight.
+      std::array<double, 3> p = {points(i, 0), points(i, 1), points(i, 2)};
       const auto [m_index, m_distance2] = _compute_closest_entity(
-          midpoint_tree, xt::reshape_view(xt::row(points, i), {1, 3}),
-          midpoint_tree.num_bboxes() - 1, mesh, initial_entity, R2);
+          midpoint_tree, p, midpoint_tree.num_bboxes() - 1, mesh,
+          initial_entity, R2);
 
       // Use a recursive search through the bounding box tree to
       // determine which entity is actually closest.
@@ -345,8 +348,7 @@ std::vector<std::int32_t> geometry::compute_closest_entity(
       // the distance from the midpoint to the point of interest as the
       // initial search radius.
       const auto [index, distance2] = _compute_closest_entity(
-          tree, xt::reshape_view(xt::row(points, i), {1, 3}),
-          tree.num_bboxes() - 1, mesh, m_index, m_distance2);
+          tree, p, tree.num_bboxes() - 1, mesh, m_index, m_distance2);
 
       entities.push_back(index);
     }
@@ -358,10 +360,11 @@ std::vector<std::int32_t> geometry::compute_closest_entity(
 //-----------------------------------------------------------------------------
 double geometry::compute_squared_distance_bbox(
     const xt::xtensor_fixed<double, xt::xshape<2, 3>>& b,
-    const xt::xtensor_fixed<double, xt::xshape<3>>& x)
+    const std::array<double, 3>& x)
 {
-  const xt::xtensor_fixed<double, xt::xshape<3>> d0 = x - xt::row(b, 0);
-  const xt::xtensor_fixed<double, xt::xshape<3>> d1 = x - xt::row(b, 1);
+  xt::xtensor_fixed<double, xt::xshape<3>> _x = {x[0], x[2], x[3]};
+  const xt::xtensor_fixed<double, xt::xshape<3>> d0 = _x - xt::row(b, 0);
+  const xt::xtensor_fixed<double, xt::xshape<3>> d1 = _x - xt::row(b, 1);
   auto _d0 = xt::where(d0 > 0.0, 0, d0);
   auto _d1 = xt::where(d1 < 0.0, 0, d1);
   return xt::norm_sq(_d0)() + xt::norm_sq(_d1)();
