@@ -99,7 +99,7 @@ std::pair<std::int32_t, double> _compute_closest_entity(
 
         r2 = geometry::squared_distance(mesh, tree.tdim(),
                                         xtl::span(&bbox[1], 1),
-                                        xt::adapt(point, {3}))[0];
+                                        xt::adapt(point, {1, 3}))[0];
       }
     }
 
@@ -362,7 +362,7 @@ double geometry::compute_squared_distance_bbox(
     const xt::xtensor_fixed<double, xt::xshape<2, 3>>& b,
     const std::array<double, 3>& x)
 {
-  xt::xtensor_fixed<double, xt::xshape<3>> _x = {x[0], x[2], x[3]};
+  xt::xtensor_fixed<double, xt::xshape<3>> _x = {x[0], x[1], x[2]};
   const xt::xtensor_fixed<double, xt::xshape<3>> d0 = _x - xt::row(b, 0);
   const xt::xtensor_fixed<double, xt::xshape<3>> d1 = _x - xt::row(b, 1);
   auto _d0 = xt::where(d0 > 0.0, 0, d0);
