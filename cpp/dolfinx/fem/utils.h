@@ -27,6 +27,9 @@
 #include <xtensor/xtensor.hpp>
 #include <xtl/xspan.hpp>
 
+#include <xtensor/xadapt.hpp>
+#include <xtensor/xio.hpp>
+
 /// @file utils.h
 /// @brief Functions supporting finite element method operations
 
@@ -675,9 +678,25 @@ void pack_coefficients(const Form<T>& form, IntegralType integral_type, int id,
       // Iterate over coefficients
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
       {
-        impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
-                                      cell_info, cells, fetch_cell,
-                                      offsets[coeff]);
+        if (coefficients[coeff]->function_space()->mesh() != form.mesh())
+        {
+          std::vector<std::int32_t> mapped_cells;
+          mapped_cells.reserve(cells.size());
+          std::transform(cells.begin(), cells.end(),
+                         std::back_inserter(mapped_cells),
+                         [entity_map = form.mesh()->entity_map()](
+                             std::int32_t cell) -> std::int32_t
+                         { return entity_map[cell]; });
+          impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
+                                        cell_info, mapped_cells, fetch_cell,
+                                        offsets[coeff]);
+        }
+        else
+        {
+          impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
+                                        cell_info, cells, fetch_cell,
+                                        offsets[coeff]);
+        }
       }
       break;
     }

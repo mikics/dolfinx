@@ -418,8 +418,10 @@ mesh::create_submesh(const Mesh& mesh, int dim,
       submesh_x_dof_index_map, std::move(submesh_x_dofmap), submesh_coord_ele,
       std::move(submesh_x), mesh.geometry().dim(), std::move(submesh_igi));
 
+  // TODO Attach entity map properly
   return {Mesh(mesh.comm(), std::move(submesh_topology),
-               std::move(submesh_geometry)),
+               std::move(submesh_geometry),
+               submesh_to_mesh_entity_map),
           std::move(submesh_to_mesh_entity_map),
           std::move(submesh_to_mesh_vertex_map),
           std::move(submesh_to_mesh_x_dof_map)};
