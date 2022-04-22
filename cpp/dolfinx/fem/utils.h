@@ -695,9 +695,9 @@ void pack_coefficients(const Form<T>& form, IntegralType integral_type, int id,
     }
     case IntegralType::exterior_facet:
     {
-      std::function<std::int32_t(const std::pair<std::int32_t, int>&)> fetch_cell;
-      const std::vector<std::pair<std::int32_t, int>>& facets
-          = form.exterior_facet_domains(id);
+      using ext_facet = std::pair<std::int32_t, int>;
+      std::function<std::int32_t(const ext_facet&)> fetch_cell;
+      const std::vector<ext_facet>& facets = form.exterior_facet_domains(id);
 
       // Iterate over coefficients
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
@@ -722,16 +722,10 @@ void pack_coefficients(const Form<T>& form, IntegralType integral_type, int id,
     }
     case IntegralType::interior_facet:
     {
-      // TODO Declare type to simplify?
-      std::function<std::int32_t(
-          const std::tuple<std::int32_t, int, std::int32_t, int>&)>
-          fetch_cell_0;
-      std::function<std::int32_t(
-          const std::tuple<std::int32_t, int, std::int32_t, int>&)>
-          fetch_cell_1;
-      const std::vector<std::tuple<std::int32_t, int, std::int32_t, int>>&
-          facets
-          = form.interior_facet_domains(id);
+      using int_facet = std::tuple<std::int32_t, int, std::int32_t, int>;
+      std::function<std::int32_t(const int_facet&)> fetch_cell_0;
+      std::function<std::int32_t(const int_facet&)> fetch_cell_1;
+      const std::vector<int_facet>& facets = form.interior_facet_domains(id);
 
       // Iterate over coefficients
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
