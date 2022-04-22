@@ -698,27 +698,30 @@ void pack_coefficients(const Form<T>& form, IntegralType integral_type, int id,
     }
     case IntegralType::exterior_facet:
     {
-      using ext_facet = std::pair<std::int32_t, int>;
-      std::function<std::int32_t(const ext_facet&)> fetch_cell;
-      const std::vector<ext_facet>& facets = form.exterior_facet_domains(id);
+      const std::vector<std::pair<std::int32_t, int>>& facets
+          = form.exterior_facet_domains(id);
 
       // Iterate over coefficients
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
       {
         if (coefficients[coeff]->function_space()->mesh() != form.mesh())
         {
-          fetch_cell = [entity_map = form.mesh()->entity_map()](auto entity)
+          auto fetch_cell
+              = [&entity_map = form.mesh()->entity_map()](auto entity)
           { return entity_map[entity.first]; };
+          impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
+                                        cell_info, facets, fetch_cell,
+                                        offsets[coeff]);
         }
         else
         {
           // Create lambda function fetching cell index from exterior facet
           // entity
-          fetch_cell = [](auto entity) { return entity.first; };
+          auto fetch_cell = [](auto entity) { return entity.first; };
+          impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
+                                        cell_info, facets, fetch_cell,
+                                        offsets[coeff]);
         }
-        impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
-                                      cell_info, facets, fetch_cell,
-                                      offsets[coeff]);
       }
 
       break;
