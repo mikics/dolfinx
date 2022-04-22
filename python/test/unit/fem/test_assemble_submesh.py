@@ -120,17 +120,17 @@ def test_submesh_facet_assembly(n, k, space, ghost_mode):
     assert(np.isclose(s_submesh, s_square_mesh))
 
 
-def assemble_mixed_forms(comm, f, g, u, v, dx):
-    a = fem.form(ufl.inner(f * g * u, v) * dx)
+def assemble_mixed_forms(comm, f, g, u, v, dx, ds):
+    a = fem.form(ufl.inner(f * g * u, v) * (dx + ds))
     A = fem.petsc.assemble_matrix(a)
     A.assemble()
 
-    L = fem.form(ufl.inner(f * g, v) * dx)
+    L = fem.form(ufl.inner(f * g, v) * (dx + ds))
     b = fem.petsc.assemble_vector(L)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD,
                   mode=PETSc.ScatterMode.REVERSE)
 
-    M = fem.form(f * g * dx)
+    M = fem.form(f * g * (dx + ds))
     s = comm.allreduce(fem.assemble_scalar(M), op=MPI.SUM)
 
     return A, b, s
@@ -167,6 +167,7 @@ def test_mixed_codim_0_assembly(d, n, k, space, ghost_mode):
     u_sm = ufl.TrialFunction(V_sm)
     v_sm = ufl.TestFunction(V_sm)
     dx_sm = ufl.Measure("dx", domain=submesh)
+    ds_sm = ufl.Measure("ds", domain=submesh)
 
     f_m1 = fem.Function(V_m1)
     f_m1.interpolate(lambda x: x[0])
@@ -176,7 +177,7 @@ def test_mixed_codim_0_assembly(d, n, k, space, ghost_mode):
     g_sm.x.array[:] = 1.0
 
     A_sm, b_sm, s_sm = assemble_mixed_forms(
-        submesh.comm, f_m1, g_sm, u_sm, v_sm, dx_sm)
+        submesh.comm, f_m1, g_sm, u_sm, v_sm, dx_sm, ds_sm)
 
     V_m0 = fem.FunctionSpace(mesh_0, (space, k))
     f_m0 = fem.Function(V_m0)
@@ -189,7 +190,7 @@ def test_mixed_codim_0_assembly(d, n, k, space, ghost_mode):
     v_m0 = ufl.TestFunction(V_m0)
 
     A_m0, b_m0, s_m0 = assemble_mixed_forms(
-        mesh_0.comm, f_m0, g_m0, u_m0, v_m0, ufl.dx)
+        mesh_0.comm, f_m0, g_m0, u_m0, v_m0, ufl.dx, ufl.ds)
 
     assert(np.isclose(A_sm.norm(), A_m0.norm()))
     assert(np.isclose(b_sm.norm(), b_m0.norm()))
