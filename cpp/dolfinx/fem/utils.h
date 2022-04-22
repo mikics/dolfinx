@@ -723,7 +723,6 @@ void pack_coefficients(const Form<T>& form, IntegralType integral_type, int id,
                                         offsets[coeff]);
         }
       }
-
       break;
     }
     case IntegralType::interior_facet:
