@@ -36,6 +36,7 @@ public:
   /// @param[in] comm MPI Communicator
   /// @param[in] topology Mesh topology
   /// @param[in] geometry Mesh geometry
+  /// @param[in] entity_map Optional map between entities
   template <typename Topology, typename Geometry>
   Mesh(MPI_Comm comm, Topology&& topology, Geometry&& geometry,
        std::vector<std::int32_t> entity_map = {})
