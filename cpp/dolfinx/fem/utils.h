@@ -728,35 +728,44 @@ void pack_coefficients(const Form<T>& form, IntegralType integral_type, int id,
     }
     case IntegralType::interior_facet:
     {
-      using int_facet = std::tuple<std::int32_t, int, std::int32_t, int>;
-      std::function<std::int32_t(const int_facet&)> fetch_cell_0;
-      std::function<std::int32_t(const int_facet&)> fetch_cell_1;
-      const std::vector<int_facet>& facets = form.interior_facet_domains(id);
+      const std::vector<std::tuple<std::int32_t, int, std::int32_t, int>>&
+          facets
+          = form.interior_facet_domains(id);
 
       // Iterate over coefficients
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
       {
         if (coefficients[coeff]->function_space()->mesh() != form.mesh())
         {
-          fetch_cell_0 = [entity_map = form.mesh()->entity_map()](auto entity)
+          auto fetch_cell_0
+              = [&entity_map = form.mesh()->entity_map()](auto entity)
           { return entity_map[std::get<0>(entity)]; };
-          fetch_cell_1 = [entity_map = form.mesh()->entity_map()](auto entity)
+          auto fetch_cell_1
+              = [&entity_map = form.mesh()->entity_map()](auto entity)
           { return entity_map[std::get<2>(entity)]; };
+          // Pack coefficient ['+']
+          impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
+                                        cell_info, facets, fetch_cell_0,
+                                        2 * offsets[coeff]);
+          // Pack coefficient ['-']
+          impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
+                                        cell_info, facets, fetch_cell_1,
+                                        offsets[coeff] + offsets[coeff + 1]);
         }
         else
         {
           // Lambda functions to fetch cell index from interior facet entity
-          fetch_cell_0 = [](auto entity) { return std::get<0>(entity); };
-          fetch_cell_1 = [](auto entity) { return std::get<2>(entity); };
+          auto fetch_cell_0 = [](auto entity) { return std::get<0>(entity); };
+          auto fetch_cell_1 = [](auto entity) { return std::get<2>(entity); };
+          // Pack coefficient ['+']
+          impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
+                                        cell_info, facets, fetch_cell_0,
+                                        2 * offsets[coeff]);
+          // Pack coefficient ['-']
+          impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
+                                        cell_info, facets, fetch_cell_1,
+                                        offsets[coeff] + offsets[coeff + 1]);
         }
-        // Pack coefficient ['+']
-        impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
-                                      cell_info, facets, fetch_cell_0,
-                                      2 * offsets[coeff]);
-        // Pack coefficient ['-']
-        impl::pack_coefficient_entity(c, 2 * cstride, *coefficients[coeff],
-                                      cell_info, facets, fetch_cell_1,
-                                      offsets[coeff] + offsets[coeff + 1]);
       }
       break;
     }
