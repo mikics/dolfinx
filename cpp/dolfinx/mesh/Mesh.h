@@ -32,23 +32,13 @@ namespace dolfinx::mesh
 class Mesh
 {
 public:
-  // TODO FIX HACKY CONSTRUCTORS
   /// Create a mesh
   /// @param[in] comm MPI Communicator
   /// @param[in] topology Mesh topology
   /// @param[in] geometry Mesh geometry
   template <typename Topology, typename Geometry>
-  Mesh(MPI_Comm comm, Topology&& topology, Geometry&& geometry)
-      : _topology(std::forward<Topology>(topology)),
-        _geometry(std::forward<Geometry>(geometry)), _comm(comm),
-        _entity_map(_topology.connectivity(_topology.dim(), 0)->num_nodes())
-  {
-    std::iota(_entity_map.begin(), _entity_map.end(), 0);
-  }
-
-  template <typename Topology, typename Geometry>
   Mesh(MPI_Comm comm, Topology&& topology, Geometry&& geometry,
-       std::vector<std::int32_t> entity_map)
+       std::vector<std::int32_t> entity_map = {})
       : _topology(std::forward<Topology>(topology)),
         _geometry(std::forward<Geometry>(geometry)), _comm(comm),
         _entity_map(entity_map)
