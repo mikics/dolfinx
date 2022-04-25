@@ -37,7 +37,7 @@ void assemble_matrix(
     const xtl::span<const std::int8_t>& bc1);
 
 /// Execute kernel over cells and accumulate result in matrix
-template <typename T, typename U>
+template <typename T, typename U, typename Functor>
 void assemble_cells(
     U mat_set, const mesh::Geometry& geometry,
     const xtl::span<const std::int32_t>& cells,
@@ -55,7 +55,8 @@ void assemble_cells(
                              const std::uint8_t*)>& kernel,
     const xtl::span<const T>& coeffs, int cstride,
     const xtl::span<const T>& constants,
-    const xtl::span<const std::uint32_t>& cell_info)
+    const xtl::span<const std::uint32_t>& cell_info, Functor fetch_cell_0,
+    Functor fetch_cell_1)
 {
   if (cells.empty())
     return;
@@ -97,8 +98,8 @@ void assemble_cells(
     dof_transform_to_transpose(_Ae, cell_info, c, ndim0);
 
     // Zero rows/columns for essential bcs
-    auto dofs0 = dofmap0.links(c);
-    auto dofs1 = dofmap1.links(c);
+    auto dofs0 = dofmap0.links(fetch_cell_0(c));
+    auto dofs1 = dofmap1.links(fetch_cell_1(c));
     if (!bc0.empty())
     {
       for (int i = 0; i < num_dofs0; ++i)
@@ -438,9 +439,34 @@ void assemble_matrix(
     const auto& fn = a.kernel(IntegralType::cell, i);
     const auto& [coeffs, cstride] = coefficients.at({IntegralType::cell, i});
     const std::vector<std::int32_t>& cells = a.cell_domains(i);
+
+    // TODO Don't duplicate
+    std::function<std::int32_t(std::int32_t)> fetch_cell_0;
+    if (a.function_spaces().at(0)->mesh() != mesh)
+    {
+      fetch_cell_0 = [&entity_map = mesh->entity_map()](auto entity)
+      { return entity_map[entity]; };
+    }
+    else
+    {
+      fetch_cell_0 = [](auto entity) { return entity; };
+    }
+
+    std::function<std::int32_t(std::int32_t)> fetch_cell_1;
+    if (a.function_spaces().at(1)->mesh() != mesh)
+    {
+      fetch_cell_1 = [&entity_map = mesh->entity_map()](auto entity)
+      { return entity_map[entity]; };
+    }
+    else
+    {
+      fetch_cell_1 = [](auto entity) { return entity; };
+    }
+
     impl::assemble_cells(mat_set, mesh->geometry(), cells, dof_transform, dofs0,
                          bs0, dof_transform_to_transpose, dofs1, bs1, bc0, bc1,
-                         fn, coeffs, cstride, constants, cell_info);
+                         fn, coeffs, cstride, constants, cell_info,
+                         fetch_cell_0, fetch_cell_1);
   }
 
   for (int i : a.integral_ids(IntegralType::exterior_facet))
