@@ -677,11 +677,28 @@ void pack_coefficients(const Form<T>& form, IntegralType integral_type, int id,
       // Iterate over coefficients
       for (std::size_t coeff = 0; coeff < coefficients.size(); ++coeff)
       {
+        // TODO Put all in one lambda? Or use separate lambdas? Or use
+        // std::function?
         if (coefficients[coeff]->function_space()->mesh() != form.mesh())
         {
           auto fetch_cell
-              = [&entity_map = form.mesh()->entity_map()](auto entity)
-          { return entity_map[entity]; };
+              = [&entity_map = form.mesh()->entity_map(),
+                 &coeff_entity_map = coefficients[coeff]->function_space()->mesh()->entity_map()](auto entity)
+          {
+            if (coeff_entity_map.size() > 0)
+            {
+              auto mesh_entity = entity_map[entity];
+              auto it = std::find(coeff_entity_map.begin(),
+                          coeff_entity_map.end(), mesh_entity);
+              assert(it != coeff_entity_map.end());
+              int32_t cell = std::distance(coeff_entity_map.begin(), it);
+              return cell;
+            }
+            else
+            {
+              return entity_map[entity];
+            }
+          };
           impl::pack_coefficient_entity(c, cstride, *coefficients[coeff],
                                         cell_info, cells, fetch_cell,
                                         offsets[coeff]);
