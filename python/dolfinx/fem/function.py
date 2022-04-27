@@ -442,10 +442,11 @@ def create_basix_element(basix_cell: basix.CellType, ufl_cell: ufl.Cell,
         variant_info = [basix.DPCVariant.diagonal_gll]
 
     b_e = basix.create_element(family, basix_cell, e.degree, *variant_info, discontinuous)
-    if basix_cell.name == f"{ufl_cell}":
-        return basix.ufl_wrapper.BasixElement(b_e)
-    else:
-        return basix.ufl_wrapper.BasixElement(b_e, ufl_cell)
+    ufl_element = basix.ufl_wrapper.BasixElement(b_e)
+    if basix_cell.name != f"{ufl_cell}":
+        # Hack to handle cells like triangle3D
+        ufl_element._cell = ufl_cell
+    return ufl_element
 
 
 class FunctionSpace(ufl.FunctionSpace):
