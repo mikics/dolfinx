@@ -12,6 +12,7 @@ import typing
 
 import numpy as np
 
+import basix
 import ufl
 from dolfinx import cpp as _cpp
 from dolfinx.cpp.mesh import (CellType, DiagonalType, GhostMode,
@@ -65,6 +66,10 @@ class Mesh(_cpp.mesh.Mesh):
     def ufl_domain(self) -> ufl.Mesh:
         """Return the ufl domain corresponding to the mesh."""
         return self._ufl_domain
+
+    def basix_cell(self) -> basix.CellType:
+        """Return the Basix cell type"""
+        return basix.cell.string_to_type(self.topology.cell_name())
 
 
 def locate_entities(mesh: Mesh, dim: int, marker: types.FunctionType) -> np.ndarray:

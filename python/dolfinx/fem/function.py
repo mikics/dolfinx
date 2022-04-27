@@ -17,6 +17,8 @@ from functools import singledispatch
 import cffi
 import numpy as np
 
+import basix
+import basix.ufl_wrapper
 import ufl
 import ufl.algorithms
 import ufl.algorithms.analysis
@@ -411,13 +413,45 @@ class ElementMetaData(typing.NamedTuple):
     """Data for representing a finite element"""
     family: str
     degree: int
-    form_degree: typing.Optional[int] = None  # noqa
+
+
+def create_basix_element(basix_cell: basix.CellType, ufl_cell: ufl.Cell,
+                         e: ElementMetaData) -> basix.finite_element.FiniteElement:
+    """Create a Basix element from inputs."""
+    discontinuous = False
+    family_name = e.family
+    if family_name.startswith("Discontinuous "):
+        family_name = family_name[14:]
+        discontinuous = True
+    if family_name in ["DP", "DG", "DQ"]:
+        family_name = "P"
+        discontinuous = True
+    if family_name == "DPC":
+        discontinuous = True
+
+    family = basix.finite_element.string_to_family(family_name, basix_cell.name)
+    variant_info = []
+    EF = basix.ElementFamily
+    if family == EF.P:
+        variant_info = [basix.LagrangeVariant.gll_warped]
+    elif family in [EF.RT, EF.N1E]:
+        variant_info = [basix.LagrangeVariant.legendre]
+    elif family in [EF.serendipity, EF.BDM, EF.N2E]:
+        variant_info = [basix.LagrangeVariant.legendre, basix.DPCVariant.legendre]
+    elif family == EF.DPC:
+        variant_info = [basix.DPCVariant.diagonal_gll]
+
+    b_e = basix.create_element(family, basix_cell, e.degree, *variant_info, discontinuous)
+    if basix_cell.name == f"{ufl_cell}":
+        return basix.ufl_wrapper.BasixElement(b_e)
+    else:
+        return basix.ufl_wrapper.BasixElement(b_e, ufl_cell)
 
 
 class FunctionSpace(ufl.FunctionSpace):
     """A space on which Functions (fields) can be defined."""
 
-    def __init__(self, mesh: Mesh, element: typing.Union[ufl.FiniteElementBase, ElementMetaData],
+    def __init__(self, mesh: Mesh, element: typing.Union[basix.finite_element.FiniteElement, ufl.FiniteElementBase, ElementMetaData],
                  cppV: typing.Optional[_cpp.fem.FunctionSpace] = None,
                  form_compiler_params: dict = {}, jit_params: dict = {}):
         """Create a finite element function space."""
@@ -434,9 +468,11 @@ class FunctionSpace(ufl.FunctionSpace):
         # Initialise the ufl.FunctionSpace
         if isinstance(element, ufl.FiniteElementBase):
             super().__init__(mesh.ufl_domain(), element)
+        elif isinstance(element, basix.finite_element.FiniteElement):
+            super().__init__(mesh.ufl_domain(), basix.ufl_wrapper.BasixElement(element))
         else:
             e = ElementMetaData(*element)
-            ufl_element = ufl.FiniteElement(e.family, mesh.ufl_cell(), e.degree, form_degree=e.form_degree)
+            ufl_element = create_basix_element(mesh.basix_cell(), mesh.ufl_cell(), e)
             super().__init__(mesh.ufl_domain(), ufl_element)
 
         # Compile dofmap and element and create DOLFIN objects
@@ -550,19 +586,23 @@ class FunctionSpace(ufl.FunctionSpace):
         return self._cpp_object.tabulate_dof_coordinates()
 
 
-def VectorFunctionSpace(mesh: Mesh, element: ElementMetaData, dim=None,
-                        restriction=None) -> FunctionSpace:
+def VectorFunctionSpace(mesh: Mesh, element: typing.Union[basix.finite_element.FiniteElement, ElementMetaData],
+                        dim=None, restriction=None) -> FunctionSpace:
     """Create vector finite element (composition of scalar elements) function space."""
-
-    e = ElementMetaData(*element)
-    ufl_element = ufl.VectorElement(e.family, mesh.ufl_cell(), e.degree, form_degree=e.form_degree, dim=dim)
+    if isinstance(element, basix.finite_element.FiniteElement):
+        ufl_element = ufl.VectorElement(basix.ufl_wrapper(element))
+    else:
+        e = ElementMetaData(*element)
+        ufl_element = ufl.VectorElement(create_basix_element(mesh.basix_cell(), mesh.ufl_cell(), e))
     return FunctionSpace(mesh, ufl_element)
 
 
-def TensorFunctionSpace(mesh: Mesh, element: ElementMetaData, shape=None,
-                        symmetry: typing.Optional[bool] = None, restriction=None) -> FunctionSpace:
+def TensorFunctionSpace(mesh: Mesh, element: typing.Union[basix.finite_element.FiniteElement, ElementMetaData],
+                        shape=None, symmetry: typing.Optional[bool] = None, restriction=None) -> FunctionSpace:
     """Create tensor finite element (composition of scalar elements) function space."""
-
-    e = ElementMetaData(*element)
-    ufl_element = ufl.TensorElement(e.family, mesh.ufl_cell(), e.degree, shape, symmetry)
+    if isinstance(element, basix.finite_element.FiniteElement):
+        ufl_element = ufl.TensorElement(basix.ufl_wrapper(element))
+    else:
+        e = ElementMetaData(*element)
+        ufl_element = ufl.TensorElement(create_basix_element(mesh.basix_cell(), mesh.ufl_cell(), e))
     return FunctionSpace(mesh, ufl_element)
