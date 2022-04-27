@@ -452,9 +452,12 @@ def create_basix_element(basix_cell: basix.CellType, ufl_cell: ufl.Cell,
 class FunctionSpace(ufl.FunctionSpace):
     """A space on which Functions (fields) can be defined."""
 
-    def __init__(self, mesh: Mesh, element: typing.Union[basix.finite_element.FiniteElement, ufl.FiniteElementBase, ElementMetaData],
-                 cppV: typing.Optional[_cpp.fem.FunctionSpace] = None,
-                 form_compiler_params: dict = {}, jit_params: dict = {}):
+    def __init__(
+        self, mesh: Mesh,
+        element: typing.Union[basix.finite_element.FiniteElement, ufl.FiniteElementBase, ElementMetaData],
+        cppV: typing.Optional[_cpp.fem.FunctionSpace] = None,
+        form_compiler_params: dict = {}, jit_params: dict = {}
+    ):
         """Create a finite element function space."""
 
         # Create function space from a UFL element and existing cpp
