@@ -56,8 +56,8 @@ void assemble_cells(
     const xtl::span<const T>& coeffs, int cstride,
     const xtl::span<const T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
-    const std::function<std::int32_t(std::int32_t)> fetch_cell_0,
-    const std::function<std::int32_t(std::int32_t)> fetch_cell_1)
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_0,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_1)
 {
   if (cells.empty())
     return;
@@ -99,8 +99,8 @@ void assemble_cells(
     dof_transform_to_transpose(_Ae, cell_info, c, ndim0);
 
     // Zero rows/columns for essential bcs
-    auto dofs0 = dofmap0.links(c);
-    auto dofs1 = dofmap1.links(c);
+    auto dofs0 = dofmap0.links(fetch_cell_0(c));
+    auto dofs1 = dofmap1.links(fetch_cell_1(c));
     if (!bc0.empty())
     {
       for (int i = 0; i < num_dofs0; ++i)
@@ -440,7 +440,7 @@ void assemble_matrix(
     std::function<std::int32_t(std::int32_t)> fetch_cell_0;
     if (a.function_spaces().at(0)->mesh() != mesh)
     {
-      fetch_cell_0 = [&entity_map = form.entity_maps().at(
+      fetch_cell_0 = [&entity_map = a.entity_maps().at(
                           a.function_spaces().at(0)->mesh())](auto entity)
       { return entity_map[entity]; };
     }
@@ -451,7 +451,7 @@ void assemble_matrix(
     std::function<std::int32_t(std::int32_t)> fetch_cell_1;
     if (a.function_spaces().at(1)->mesh() != mesh)
     {
-      fetch_cell_1 = [&entity_map = form.entity_maps().at(
+      fetch_cell_1 = [&entity_map = a.entity_maps().at(
                           a.function_spaces().at(1)->mesh())](auto entity)
       { return entity_map[entity]; };
     }
