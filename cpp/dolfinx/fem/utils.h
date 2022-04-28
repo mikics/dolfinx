@@ -82,7 +82,11 @@ extract_function_spaces(const std::vector<std::vector<const Form<T>*>>& a)
 la::SparsityPattern create_sparsity_pattern(
     const mesh::Topology& topology,
     const std::array<std::reference_wrapper<const DofMap>, 2>& dofmaps,
-    const std::set<IntegralType>& integrals);
+    const std::set<IntegralType>& integrals,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_0
+    = [](auto c) { return c; },
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_1
+    = [](auto c) { return c; });
 
 /// @brief Create a sparsity pattern for a given form.
 /// @note The pattern is not finalised, i.e. the caller is responsible
@@ -115,7 +119,31 @@ la::SparsityPattern create_sparsity_pattern(const Form<T>& a)
     mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
   }
 
-  return create_sparsity_pattern(mesh->topology(), dofmaps, types);
+  std::function<std::int32_t(std::int32_t)> fetch_cell_0;
+  if (a.function_spaces().at(0)->mesh() != mesh)
+  {
+    fetch_cell_0
+        = [&entity_map = a.entity_maps().at(a.function_spaces().at(0)->mesh())](
+              auto entity) { return entity_map[entity]; };
+  }
+  else
+  {
+    fetch_cell_0 = [](auto entity) { return entity; };
+  }
+  std::function<std::int32_t(std::int32_t)> fetch_cell_1;
+  if (a.function_spaces().at(1)->mesh() != mesh)
+  {
+    fetch_cell_1
+        = [&entity_map = a.entity_maps().at(a.function_spaces().at(1)->mesh())](
+              auto entity) { return entity_map[entity]; };
+  }
+  else
+  {
+    fetch_cell_1 = [](auto entity) { return entity; };
+  }
+
+  return create_sparsity_pattern(mesh->topology(), dofmaps, types, fetch_cell_0,
+                                 fetch_cell_1);
 }
 
 /// Create an ElementDofLayout from a ufcx_dofmap

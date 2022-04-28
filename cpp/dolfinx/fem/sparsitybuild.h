@@ -7,6 +7,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <functional>
 
 namespace dolfinx::la
@@ -35,9 +36,14 @@ namespace sparsitybuild
 /// @param[in] dofmaps The dofmap to use in building the sparsity
 /// pattern
 /// @note The sparsity pattern is not finalised
-void cells(la::SparsityPattern& pattern, const mesh::Topology& topology,
-           const std::array<const std::reference_wrapper<const fem::DofMap>, 2>&
-               dofmaps);
+void cells(
+    la::SparsityPattern& pattern, const mesh::Topology& topology,
+    const std::array<const std::reference_wrapper<const fem::DofMap>, 2>&
+        dofmaps,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_0
+    = [](auto c) { return c; },
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_1
+    = [](auto c) { return c; });
 
 /// @brief Iterate over interior facets and insert entries into sparsity
 /// pattern.
