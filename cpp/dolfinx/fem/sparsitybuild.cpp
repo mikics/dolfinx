@@ -35,7 +35,9 @@ void sparsitybuild::cells(
 void sparsitybuild::interior_facets(
     la::SparsityPattern& pattern, const mesh::Topology& topology,
     const std::array<const std::reference_wrapper<const fem::DofMap>, 2>&
-        dofmaps)
+        dofmaps,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_0,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_1)
 {
   const int D = topology.dim();
   if (!topology.connectivity(D - 1, 0))
@@ -64,10 +66,15 @@ void sparsitybuild::interior_facets(
     assert(cells.size() == 2);
     const int cell0 = cells[0];
     const int cell1 = cells[1];
+    // TODO TIDY
+    const std::array<const std::reference_wrapper<
+                         const std::function<std::int32_t(std::int32_t)>>,
+                     2>
+        fetch_cells = {fetch_cell_0, fetch_cell_1};
     for (std::size_t i = 0; i < 2; i++)
     {
-      auto cell_dofs0 = dofmaps[i].get().cell_dofs(cell0);
-      auto cell_dofs1 = dofmaps[i].get().cell_dofs(cell1);
+      auto cell_dofs0 = dofmaps[i].get().cell_dofs(fetch_cells[i](cell0));
+      auto cell_dofs1 = dofmaps[i].get().cell_dofs(fetch_cells[i](cell1));
       macro_dofs[i].resize(cell_dofs0.size() + cell_dofs1.size());
       std::copy(cell_dofs0.begin(), cell_dofs0.end(), macro_dofs[i].begin());
       std::copy(cell_dofs1.begin(), cell_dofs1.end(),
@@ -81,7 +88,9 @@ void sparsitybuild::interior_facets(
 void sparsitybuild::exterior_facets(
     la::SparsityPattern& pattern, const mesh::Topology& topology,
     const std::array<const std::reference_wrapper<const fem::DofMap>, 2>&
-        dofmaps)
+        dofmaps,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_0,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_1)
 {
   const int D = topology.dim();
   if (!topology.connectivity(D - 1, 0))
@@ -103,8 +112,8 @@ void sparsitybuild::exterior_facets(
 
     auto cells = connectivity->links(f);
     assert(cells.size() == 1);
-    pattern.insert(dofmaps[0].get().cell_dofs(cells[0]),
-                   dofmaps[1].get().cell_dofs(cells[0]));
+    pattern.insert(dofmaps[0].get().cell_dofs(fetch_cell_0(cells[0])),
+                   dofmaps[1].get().cell_dofs(fetch_cell_1(cells[0])));
   }
 }
 //-----------------------------------------------------------------------------
