@@ -231,3 +231,39 @@ def test_mixed_codim_0_assembly(d, n, k, space, ghost_mode):
     assert(np.isclose(A_sm.norm(), A_m.norm()))
     assert(np.isclose(b_sm.norm(), b_m.norm()))
     assert(np.isclose(s_sm, s_m))
+
+
+np.set_printoptions(linewidth=200)
+
+ghost_mode = GhostMode.shared_facet
+n = 2
+mesh_1 = create_rectangle(
+    MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
+    ghost_mode=ghost_mode)
+edim = mesh_1.topology.dim
+entities_0 = locate_entities(mesh_1, edim, lambda x: x[0] <= 1.0)
+submesh_0, entity_map_0, vertex_map_0, geom_map_0 = create_submesh(
+    mesh_1, edim, entities_0)
+
+space = "Lagrange"
+k = 1
+V_m_1 = fem.FunctionSpace(mesh_1, (space, k))
+V_sm_0 = fem.FunctionSpace(submesh_0, (space, k))
+
+u = ufl.TrialFunction(V_sm_0)
+v = ufl.TestFunction(V_m_1)
+dx_sm = ufl.Measure("dx", domain=submesh_0)
+ds_sm = ufl.Measure("ds", domain=submesh_0)
+
+entity_maps = {mesh_1: entity_map_0}
+a = fem.form(ufl.inner(u, v) * dx_sm,
+             entity_maps=entity_maps)
+A = fem.petsc.assemble_matrix(a)
+A.assemble()
+print(A[:, :])
+
+# L = fem.form(v * dx_sm, entity_maps=entity_maps)
+# b = fem.petsc.assemble_vector(L)
+# b.ghostUpdate(addv=PETSc.InsertMode.ADD,
+#               mode=PETSc.ScatterMode.REVERSE)
+# print(b[:])
