@@ -161,7 +161,10 @@ void assemble_exterior_facets(
                              const std::uint8_t*)>& kernel,
     const xtl::span<const T>& coeffs, int cstride,
     const xtl::span<const T>& constants,
-    const xtl::span<const std::uint32_t>& cell_info)
+    const xtl::span<const std::uint32_t>& cell_info_0,
+    const xtl::span<const std::uint32_t>& cell_info_1,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_0,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_1)
 {
   if (facets.empty())
     return;
@@ -198,12 +201,15 @@ void assemble_exterior_facets(
     kernel(Ae.data(), coeffs.data() + index * cstride, constants.data(),
            coordinate_dofs.data(), &local_facet, nullptr);
 
-    dof_transform(_Ae, cell_info, cell, ndim1);
-    dof_transform_to_transpose(_Ae, cell_info, cell, ndim0);
+    auto cell_0 = fetch_cell_0(cell);
+    auto cell_1 = fetch_cell_1(cell);
+
+    dof_transform(_Ae, cell_info_1, cell_1, ndim1);
+    dof_transform_to_transpose(_Ae, cell_info_0, cell_0, ndim0);
 
     // Zero rows/columns for essential bcs
-    auto dofs0 = dofmap0.links(cell);
-    auto dofs1 = dofmap1.links(cell);
+    auto dofs0 = dofmap0.links(cell_0);
+    auto dofs1 = dofmap1.links(cell_1);
     if (!bc0.empty())
     {
       for (int i = 0; i < num_dofs0; ++i)
@@ -259,7 +265,10 @@ void assemble_interior_facets(
                              const std::uint8_t*)>& kernel,
     const xtl::span<const T>& coeffs, int cstride,
     const xtl::span<const int>& offsets, const xtl::span<const T>& constants,
-    const xtl::span<const std::uint32_t>& cell_info,
+    const xtl::span<const std::uint32_t>& cell_info_0,
+    const xtl::span<const std::uint32_t>& cell_info_1,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_0,
+    const std::function<std::int32_t(std::int32_t)>& fetch_cell_1,
     const std::function<std::uint8_t(std::size_t)>& get_perm)
 {
   if (facets.empty())
@@ -309,16 +318,21 @@ void assemble_interior_facets(
           xt::view(coordinate_dofs, 1, i, xt::all()).begin());
     }
 
+    const std::array<std::int32_t, 2> cells_0
+        = {fetch_cell_0(cells[0]), fetch_cell_0(cells[1])};
+    const std::array<std::int32_t, 2> cells_1
+        = {fetch_cell_1(cells[0]), fetch_cell_1(cells[1])};
+
     // Get dof maps for cells and pack
-    xtl::span<const std::int32_t> dmap0_cell0 = dofmap0.cell_dofs(cells[0]);
-    xtl::span<const std::int32_t> dmap0_cell1 = dofmap0.cell_dofs(cells[1]);
+    xtl::span<const std::int32_t> dmap0_cell0 = dofmap0.cell_dofs(cells_0[0]);
+    xtl::span<const std::int32_t> dmap0_cell1 = dofmap0.cell_dofs(cells_0[1]);
     dmapjoint0.resize(dmap0_cell0.size() + dmap0_cell1.size());
     std::copy(dmap0_cell0.begin(), dmap0_cell0.end(), dmapjoint0.begin());
     std::copy(dmap0_cell1.begin(), dmap0_cell1.end(),
               std::next(dmapjoint0.begin(), dmap0_cell0.size()));
 
-    xtl::span<const std::int32_t> dmap1_cell0 = dofmap1.cell_dofs(cells[0]);
-    xtl::span<const std::int32_t> dmap1_cell1 = dofmap1.cell_dofs(cells[1]);
+    xtl::span<const std::int32_t> dmap1_cell0 = dofmap1.cell_dofs(cells_1[0]);
+    xtl::span<const std::int32_t> dmap1_cell1 = dofmap1.cell_dofs(cells_1[1]);
     dmapjoint1.resize(dmap1_cell0.size() + dmap1_cell1.size());
     std::copy(dmap1_cell0.begin(), dmap1_cell0.end(), dmapjoint1.begin());
     std::copy(dmap1_cell1.begin(), dmap1_cell1.end(),
@@ -331,6 +345,7 @@ void assemble_interior_facets(
     Ae.resize(num_rows * num_cols);
     std::fill(Ae.begin(), Ae.end(), 0);
 
+    // TODO THINK ABOUT PERMUTATIONS
     const std::array perm{
         get_perm(cells[0] * num_cell_facets + local_facet[0]),
         get_perm(cells[1] * num_cell_facets + local_facet[1])};
@@ -351,10 +366,10 @@ void assemble_interior_facets(
     // (3 rows/columns for each cell). Subspans are used to offset to the right
     // blocks of the matrix
 
-    dof_transform(_Ae, cell_info, cells[0], num_cols);
-    dof_transform(sub_Ae0, cell_info, cells[1], num_cols);
-    dof_transform_to_transpose(_Ae, cell_info, cells[0], num_rows);
-    dof_transform_to_transpose(sub_Ae1, cell_info, cells[1], num_rows);
+    dof_transform(_Ae, cell_info_1, cells_1[0], num_cols);
+    dof_transform(sub_Ae0, cell_info_1, cells_1[1], num_cols);
+    dof_transform_to_transpose(_Ae, cell_info_0, cells_0[0], num_rows);
+    dof_transform_to_transpose(sub_Ae1, cell_info_0, cells_0[1], num_rows);
 
     // Zero rows/columns for essential bcs
     if (!bc0.empty())
@@ -444,38 +459,38 @@ void assemble_matrix(
     cell_info_1 = xtl::span(mesh_1->topology().get_cell_permutation_info());
   }
 
+  std::function<std::int32_t(std::int32_t)> fetch_cell_0;
+  if (a.function_spaces().at(0)->mesh() != mesh)
+  {
+    fetch_cell_0
+        = [&entity_map = a.entity_maps().at(a.function_spaces().at(0)->mesh())](
+              auto entity) { return entity_map[entity]; };
+  }
+  else
+  {
+    fetch_cell_0 = [](auto entity) { return entity; };
+  }
+  std::function<std::int32_t(std::int32_t)> fetch_cell_1;
+  if (a.function_spaces().at(1)->mesh() != mesh)
+  {
+    fetch_cell_1
+        = [&entity_map = a.entity_maps().at(a.function_spaces().at(1)->mesh())](
+              auto entity) { return entity_map[entity]; };
+  }
+  else
+  {
+    fetch_cell_1 = [](auto entity) { return entity; };
+  }
+
   for (int i : a.integral_ids(IntegralType::cell))
   {
-    std::function<std::int32_t(std::int32_t)> fetch_cell_0;
-    if (a.function_spaces().at(0)->mesh() != mesh)
-    {
-      fetch_cell_0 = [&entity_map = a.entity_maps().at(
-                          a.function_spaces().at(0)->mesh())](auto entity)
-      { return entity_map[entity]; };
-    }
-    else
-    {
-      fetch_cell_0 = [](auto entity) { return entity; };
-    }
-    std::function<std::int32_t(std::int32_t)> fetch_cell_1;
-    if (a.function_spaces().at(1)->mesh() != mesh)
-    {
-      fetch_cell_1 = [&entity_map = a.entity_maps().at(
-                          a.function_spaces().at(1)->mesh())](auto entity)
-      { return entity_map[entity]; };
-    }
-    else
-    {
-      fetch_cell_1 = [](auto entity) { return entity; };
-    }
-
     const auto& fn = a.kernel(IntegralType::cell, i);
     const auto& [coeffs, cstride] = coefficients.at({IntegralType::cell, i});
     const std::vector<std::int32_t>& cells = a.cell_domains(i);
     impl::assemble_cells(mat_set, mesh->geometry(), cells, dof_transform, dofs0,
                          bs0, dof_transform_to_transpose, dofs1, bs1, bc0, bc1,
-                         fn, coeffs, cstride, constants, cell_info_0, cell_info_1,
-                         fetch_cell_0, fetch_cell_1);
+                         fn, coeffs, cstride, constants, cell_info_0,
+                         cell_info_1, fetch_cell_0, fetch_cell_1);
   }
 
   for (int i : a.integral_ids(IntegralType::exterior_facet))
@@ -485,10 +500,10 @@ void assemble_matrix(
         = coefficients.at({IntegralType::exterior_facet, i});
     const std::vector<std::pair<std::int32_t, int>>& facets
         = a.exterior_facet_domains(i);
-    impl::assemble_exterior_facets(mat_set, *mesh, facets, dof_transform, dofs0,
-                                   bs0, dof_transform_to_transpose, dofs1, bs1,
-                                   bc0, bc1, fn, coeffs, cstride, constants,
-                                   cell_info_0); // FIXME PASS BOTH CELL INFOS
+    impl::assemble_exterior_facets(
+        mat_set, *mesh, facets, dof_transform, dofs0, bs0,
+        dof_transform_to_transpose, dofs1, bs1, bc0, bc1, fn, coeffs, cstride,
+        constants, cell_info_0, cell_info_1, fetch_cell_0, fetch_cell_1);
   }
 
   if (a.num_integrals(IntegralType::interior_facet) > 0)
@@ -516,7 +531,8 @@ void assemble_matrix(
       impl::assemble_interior_facets(
           mat_set, *mesh, facets, dof_transform, *dofmap0, bs0,
           dof_transform_to_transpose, *dofmap1, bs1, bc0, bc1, fn, coeffs,
-          cstride, c_offsets, constants, cell_info_0, get_perm); // FIXME PASS BOTH CELL INFOS
+          cstride, c_offsets, constants, cell_info_0, cell_info_1, fetch_cell_0,
+          fetch_cell_1, get_perm);
     }
   }
 }
