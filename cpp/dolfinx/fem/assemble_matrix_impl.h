@@ -55,7 +55,8 @@ void assemble_cells(
                              const std::uint8_t*)>& kernel,
     const xtl::span<const T>& coeffs, int cstride,
     const xtl::span<const T>& constants,
-    const xtl::span<const std::uint32_t>& cell_info,
+    const xtl::span<const std::uint32_t>& cell_info_0,
+    const xtl::span<const std::uint32_t>& cell_info_1,
     const std::function<std::int32_t(std::int32_t)>& fetch_cell_0,
     const std::function<std::int32_t(std::int32_t)>& fetch_cell_1)
 {
@@ -95,12 +96,15 @@ void assemble_cells(
     kernel(Ae.data(), coeffs.data() + index * cstride, constants.data(),
            coordinate_dofs.data(), nullptr, nullptr);
 
-    dof_transform(_Ae, cell_info, c, ndim1);
-    dof_transform_to_transpose(_Ae, cell_info, c, ndim0);
+    std::int32_t c_0 = fetch_cell_0(c);
+    std::int32_t c_1 = fetch_cell_1(c);
+
+    dof_transform(_Ae, cell_info_1, c_1, ndim1);
+    dof_transform_to_transpose(_Ae, cell_info_0, c_0, ndim0);
 
     // Zero rows/columns for essential bcs
-    auto dofs0 = dofmap0.links(fetch_cell_0(c));
-    auto dofs1 = dofmap1.links(fetch_cell_1(c));
+    auto dofs0 = dofmap0.links(c_0);
+    auto dofs1 = dofmap1.links(c_1);
     if (!bc0.empty())
     {
       for (int i = 0; i < num_dofs0; ++i)
@@ -428,11 +432,16 @@ void assemble_matrix(
       = element0->needs_dof_transformations()
         or element1->needs_dof_transformations()
         or a.needs_facet_permutations();
-  xtl::span<const std::uint32_t> cell_info;
+  xtl::span<const std::uint32_t> cell_info_0;
+  xtl::span<const std::uint32_t> cell_info_1;
   if (needs_transformation_data)
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = xtl::span(mesh->topology().get_cell_permutation_info());
+    auto mesh_0 = a.function_spaces().at(0)->mesh();
+    auto mesh_1 = a.function_spaces().at(1)->mesh();
+    mesh_0->topology_mutable().create_entity_permutations();
+    mesh_1->topology_mutable().create_entity_permutations();
+    cell_info_0 = xtl::span(mesh_0->topology().get_cell_permutation_info());
+    cell_info_1 = xtl::span(mesh_1->topology().get_cell_permutation_info());
   }
 
   for (int i : a.integral_ids(IntegralType::cell))
@@ -465,7 +474,7 @@ void assemble_matrix(
     const std::vector<std::int32_t>& cells = a.cell_domains(i);
     impl::assemble_cells(mat_set, mesh->geometry(), cells, dof_transform, dofs0,
                          bs0, dof_transform_to_transpose, dofs1, bs1, bc0, bc1,
-                         fn, coeffs, cstride, constants, cell_info,
+                         fn, coeffs, cstride, constants, cell_info_0, cell_info_1,
                          fetch_cell_0, fetch_cell_1);
   }
 
@@ -479,7 +488,7 @@ void assemble_matrix(
     impl::assemble_exterior_facets(mat_set, *mesh, facets, dof_transform, dofs0,
                                    bs0, dof_transform_to_transpose, dofs1, bs1,
                                    bc0, bc1, fn, coeffs, cstride, constants,
-                                   cell_info);
+                                   cell_info_0); // FIXME PASS BOTH CELL INFOS
   }
 
   if (a.num_integrals(IntegralType::interior_facet) > 0)
@@ -507,7 +516,7 @@ void assemble_matrix(
       impl::assemble_interior_facets(
           mat_set, *mesh, facets, dof_transform, *dofmap0, bs0,
           dof_transform_to_transpose, *dofmap1, bs1, bc0, bc1, fn, coeffs,
-          cstride, c_offsets, constants, cell_info, get_perm);
+          cstride, c_offsets, constants, cell_info_0, get_perm); // FIXME PASS BOTH CELL INFOS
     }
   }
 }
