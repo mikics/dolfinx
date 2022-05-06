@@ -115,7 +115,7 @@ ufl_element = basix.ufl_wrapper.BasixElement(element)
 # +
 msh = mesh.create_rectangle(comm=MPI.COMM_WORLD,
                             points=((0.0, 0.0), (2.0, 1.0)), n=(32, 16),
-                            cell_type=mesh.CellType.triangle,)
+                            cell_type=mesh.CellType.triangle)
 V = fem.FunctionSpace(msh, ufl_element)
 
 facets = mesh.locate_entities_boundary(msh, dim=1,
