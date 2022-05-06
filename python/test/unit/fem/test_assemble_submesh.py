@@ -144,7 +144,7 @@ def assemble_forms_1(comm, f, g, h, u, v, dx, ds, entity_maps={}):
 @pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange"])
 @pytest.mark.parametrize("ghost_mode", [GhostMode.none,
                                         GhostMode.shared_facet])
-def test_mixed_codim_0_assembly(d, n, k, space, ghost_mode):
+def test_mixed_codim_0_assembly_coeff(d, n, k, space, ghost_mode):
     """Test that assembling a form where the coefficients are defined on
     different meshes gives the expected result"""
 
@@ -236,37 +236,40 @@ def test_mixed_codim_0_assembly(d, n, k, space, ghost_mode):
     assert(np.isclose(s_sm, s_m))
 
 
-np.set_printoptions(linewidth=200)
+def test_mixed_codim_0_assembly_test_trial():
+    # TODO Add test to check matrix is actually correct
+    ghost_mode = GhostMode.shared_facet
+    n = 2
+    mesh_1 = create_rectangle(
+        MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
+        ghost_mode=ghost_mode)
+    edim = mesh_1.topology.dim
+    entities_0 = locate_entities(mesh_1, edim, lambda x: x[0] <= 1.0)
+    submesh_0, entity_map_0, vertex_map_0, geom_map_0 = create_submesh(
+        mesh_1, edim, entities_0)
 
-ghost_mode = GhostMode.shared_facet
-n = 2
-mesh_1 = create_rectangle(
-    MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
-    ghost_mode=ghost_mode)
-edim = mesh_1.topology.dim
-entities_0 = locate_entities(mesh_1, edim, lambda x: x[0] <= 1.0)
-submesh_0, entity_map_0, vertex_map_0, geom_map_0 = create_submesh(
-    mesh_1, edim, entities_0)
+    element = ("Lagrange", 1)
+    V_m_1 = fem.FunctionSpace(mesh_1, element)
+    V_sm_0 = fem.FunctionSpace(submesh_0, element)
 
-space = "Lagrange"
-k = 1
-V_m_1 = fem.FunctionSpace(mesh_1, (space, k))
-V_sm_0 = fem.FunctionSpace(submesh_0, (space, k))
+    u = ufl.TrialFunction(V_sm_0)
+    v = ufl.TestFunction(V_m_1)
+    dx_sm = ufl.Measure("dx", domain=submesh_0)
+    ds_sm = ufl.Measure("ds", domain=submesh_0)
 
-u = ufl.TrialFunction(V_sm_0)
-v = ufl.TestFunction(V_m_1)
-dx_sm = ufl.Measure("dx", domain=submesh_0)
-ds_sm = ufl.Measure("ds", domain=submesh_0)
+    entity_maps = {mesh_1: entity_map_0}
+    a = fem.form(ufl.inner(u, v) * (dx_sm + ds_sm),
+                 entity_maps=entity_maps)
+    A = fem.petsc.assemble_matrix(a)
+    A.assemble()
+    norm_0 = A.norm()
 
-entity_maps = {mesh_1: entity_map_0}
-a = fem.form(ufl.inner(u, v) * dx_sm,
-             entity_maps=entity_maps)
-A = fem.petsc.assemble_matrix(a)
-A.assemble()
-print(A[:, :])
+    u = ufl.TrialFunction(V_m_1)
+    v = ufl.TestFunction(V_sm_0)
+    a = fem.form(ufl.inner(u, v) * (dx_sm + ds_sm),
+                 entity_maps=entity_maps)
+    A = fem.petsc.assemble_matrix(a)
+    A.assemble()
+    norm_1 = A.norm()
 
-# L = fem.form(v * dx_sm, entity_maps=entity_maps)
-# b = fem.petsc.assemble_vector(L)
-# b.ghostUpdate(addv=PETSc.InsertMode.ADD,
-#               mode=PETSc.ScatterMode.REVERSE)
-# print(b[:])
+    assert(np.isclose(norm_0, norm_1))
