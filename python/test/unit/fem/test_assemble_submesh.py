@@ -236,10 +236,13 @@ def test_mixed_codim_0_assembly_coeff(d, n, k, space, ghost_mode):
     assert(np.isclose(s_sm, s_m))
 
 
-def test_mixed_codim_0_assembly_test_trial():
+@pytest.mark.parametrize("n", [2, 6])
+@pytest.mark.parametrize("k", [1, 4])
+@pytest.mark.parametrize("space", ["Lagrange", "Discontinuous Lagrange"])
+@pytest.mark.parametrize("ghost_mode", [GhostMode.none,
+                                        GhostMode.shared_facet])
+def test_mixed_codim_0_assembly_test_trial(n, k, space, ghost_mode):
     # TODO Add test to check matrix is actually correct
-    ghost_mode = GhostMode.shared_facet
-    n = 2
     mesh_1 = create_rectangle(
         MPI.COMM_WORLD, ((0.0, 0.0), (2.0, 1.0)), (2 * n, n),
         ghost_mode=ghost_mode)
@@ -248,7 +251,7 @@ def test_mixed_codim_0_assembly_test_trial():
     submesh_0, entity_map_0, vertex_map_0, geom_map_0 = create_submesh(
         mesh_1, edim, entities_0)
 
-    element = ("Lagrange", 1)
+    element = (space, k)
     V_m_1 = fem.FunctionSpace(mesh_1, element)
     V_sm_0 = fem.FunctionSpace(submesh_0, element)
 
