@@ -20,8 +20,7 @@
 import numpy as np
 import ufl
 from dolfinx import fem
-from dolfinx.mesh import CellType, GhostMode, create_rectangle, locate_entities_boundary
-from petsc4py import PETSc
+from dolfinx.mesh import CellType, GhostMode, create_rectangle
 from mpi4py import MPI
 import basix
 import basix.ufl_wrapper
@@ -224,6 +223,7 @@ def solve_error(mixed_space, h):
     return random.random() * h
 # -
 
+
 # We now use this function on a range of meshes with Taylor-Hood, Mardal-Tai-Winther, and
 # Crouzeix-Raviart elements, then plot the results.
 
@@ -274,4 +274,3 @@ plt.savefig("demo_custom-elements_plot.png")
 # ![](demo_custom-elements_plot.png)
 #
 # In the plot it can be seen that the *** element acheives the best rate of convergence.
-
