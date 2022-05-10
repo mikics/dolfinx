@@ -20,7 +20,8 @@
 import numpy as np
 import ufl
 from dolfinx import fem
-from dolfinx.mesh import CellType, GhostMode, create_rectangle
+from dolfinx.mesh import CellType, GhostMode, create_rectangle, locate_entities_boundary
+from petsc4py import PETSc
 from mpi4py import MPI
 import basix
 import basix.ufl_wrapper
@@ -131,27 +132,77 @@ e = basix.create_custom_element(
     basix.CellType.triangle, [2], wcoeffs, x, M, basix.MapType.contravariantPiola, False, 1, 3)
 # -
 
-# ## Using the custom element
 # Using Basix's UFL wrapper, we can wrap our custom Basix element up as a UFL element.
 
 # +
 mtw_element = basix.ufl_wrapper.BasixElement(e)
 # -
 
-# We can now use the element in any way we would use an element created in any other way. For example,
-# we could compute a mass matrix with this element as follows.
+
+# ## Defining a conforming Crouzeix-Raviart element
+# In a similar way to above, we can define a degree 3 [conforming
+# Crouzeix-Raviart](https://defelement.com/elements/conforming-crouzeix-raviart.html) element on a
+# triangle.
+#
+# We begin by defining a basis of the polynomial set. For this element, this contains the polynomials
+# $1$, $y$, $x$, $y^2$, $xy$, $x^2$, $x^3$, $y^3$, $xy^2$, $x^2y$, $x^3$, $xy^2(x+y)$, and $x^2y(x+y)$.
 
 # +
-msh = create_rectangle(MPI.COMM_WORLD,
-                       [np.array([0, 0]), np.array([1, 1])],
-                       [32, 32],
-                       CellType.triangle, GhostMode.none)
+npoly = 15
+ndofs = 12
+wcoeffs = np.zeros((ndofs, npoly))
 
-V = fem.FunctionSpace(msh, mtw_element)
+dof_n = 0
+for i in range(10):
+    wcoeffs[dof_n, dof_n] = 1
+    dof_n += 1
 
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
+pts, wts = basix.make_quadrature(basix.CellType.triangle, 8)
+poly = basix.tabulate_polynomials(basix.PolynomialType.legendre, basix.CellType.triangle, 4, pts)
+for i in range(1, 3):
+    x = pts[:, 0]
+    y = pts[:, 1]
+    f = x ** i * y ** (3 - i) * (x + y)
 
-a = fem.form(ufl.inner(u, v) * ufl.dx)
-A = fem.assemble_matrix(a)
+    for j in range(npoly):
+        wcoeffs[dof_n, j] = sum(f * poly[:, j] * wts)
+    dof_n += 1
+# -
+
+# Next, we define the interpolation operators. These represent a point evaluation at each vertex,
+# two point evaluations on each edge, and three point evaluations on the interior of the cell.
+
+# +
+geometry = basix.geometry(basix.CellType.triangle)
+topology = basix.topology(basix.CellType.triangle)
+x = [[], [], [], []]
+M = [[], [], [], []]
+for v in topology[0]:
+    x[0].append(np.array(geometry[v]))
+    M[0].append(np.array([[[1.]]]))
+pts = basix.create_lattice(basix.CellType.interval, 3, basix.LatticeType.equispaced, False)
+mat = np.zeros((len(pts), 1, len(pts)))
+mat[:, 0, :] = np.eye(len(pts))
+for e in topology[1]:
+    edge_pts = []
+    v0 = geometry[e[0]]
+    v1 = geometry[e[1]]
+    for p in pts:
+        edge_pts.append(v0 + p * (v1 - v0))
+    x[1].append(np.array(edge_pts))
+    M[1].append(mat)
+pts = basix.create_lattice(basix.CellType.triangle, 4, basix.LatticeType.equispaced, False)
+x[2].append(pts)
+mat = np.zeros((len(pts), 1, len(pts)))
+mat[:, 0, :] = np.eye(len(pts))
+M[2].append(mat)
+# -
+
+# Finally, we create the element.
+
+# +
+element = basix.create_custom_element(
+    basix.CellType.triangle, [], wcoeffs, x, M, basix.MapType.identity, False, 3, 4)
+
+ccr_element = basix.ufl_wrapper.BasixElement(element)
 # -
