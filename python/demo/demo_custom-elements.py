@@ -245,7 +245,7 @@ for i in range(1, 6):
     th_errors.append(solve_error(msh, P2, P1))
     cr_errors.append(solve_error(msh, CCR, CR1))
 
-plt.figure(figsize=(17, 8))
+plt.figure(figsize=(17, 5))
 for i, ylabel in enumerate(["u-u_h", "\\operatorname{div}(u-u_h)", "p-p_h"]):
     plt.subplot(1, 3, i + 1)
     plt.plot(hs, [j[i] for j in th_errors], "bo-")
