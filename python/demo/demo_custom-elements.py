@@ -48,6 +48,57 @@ from petsc4py import PETSc
 # of the orthogonal Legendre polynomials on the cell. The first six members of this basis are the
 # polynomials $1$, $y$, $x$, $y^2$, $xy$, $x^2$, $x^3$, $y^3$, $xy^2$, $x^2y$, and $x^3$.
 
+
+#######################################################
+npoly = 10
+ndofs = 7
+wcoeffs = np.zeros((ndofs, npoly))
+
+dof_n = 0
+for i in range(6):
+    wcoeffs[dof_n, dof_n] = 1
+    dof_n += 1
+
+pts, wts = basix.make_quadrature(basix.CellType.triangle, 6)
+poly = basix.tabulate_polynomials(basix.PolynomialType.legendre, basix.CellType.triangle, 3, pts)
+for i in range(1, 2):
+    x = pts[:, 0]
+    y = pts[:, 1]
+    f = x ** i * y ** (2 - i) * (x + y)
+
+    for j in range(npoly):
+        wcoeffs[dof_n, j] = sum(f * poly[:, j] * wts)
+    dof_n += 1
+
+geometry = basix.geometry(basix.CellType.triangle)
+topology = basix.topology(basix.CellType.triangle)
+x = [[], [], [], []]
+M = [[], [], [], []]
+for v in topology[0]:
+    x[0].append(np.array(geometry[v]))
+    M[0].append(np.array([[[1.]]]))
+pts = basix.create_lattice(basix.CellType.interval, 2, basix.LatticeType.equispaced, False)
+mat = np.zeros((len(pts), 1, len(pts)))
+mat[:, 0, :] = np.eye(len(pts))
+for e in topology[1]:
+    edge_pts = []
+    v0 = geometry[e[0]]
+    v1 = geometry[e[1]]
+    for p in pts:
+        edge_pts.append(v0 + p * (v1 - v0))
+    x[1].append(np.array(edge_pts))
+    M[1].append(mat)
+
+x[2].append(np.array([[1 / 3, 1 / 3]]))
+mat = np.zeros((len(pts), 1, len(pts)))
+mat[:, 0, :] = np.eye(len(pts))
+M[2].append(mat)
+
+ccr2 = basix.create_custom_element(
+    basix.CellType.triangle, [], wcoeffs, x, M, basix.MapType.identity, False, 2, 3)
+#######################################################
+
+
 # +
 npoly = 15
 ndofs = 12
@@ -169,7 +220,8 @@ def solve_stokes(V, Q, k, boundary_marker, f, u_bc_expr):
     pressure_dof = fem.locate_dofs_geometrical(
         Q, lambda x: np.logical_and(np.isclose(x[0], 0.0),
                                     np.isclose(x[1], 0.0)))
-    bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof, Q)
+    print(pressure_dof[:1])
+    bc_p = fem.dirichletbc(PETSc.ScalarType(0.0), pressure_dof[:1], Q)
     bcs = [bc_u, bc_p]
     A = fem.petsc.assemble_matrix_block(a, bcs=bcs)
     A.assemble()
@@ -224,15 +276,19 @@ def solve_error(msh, e1, e2):
 # Crouzeix-Raviart elements, then plot the results.
 
 # +
+P2_scalar = ufl.FiniteElement("Discontinuous Lagrange", "triangle", 2)
 P2 = ufl.VectorElement("Lagrange", "triangle", 2)
 P1 = ufl.FiniteElement("Lagrange", "triangle", 1)
+DP1 = ufl.FiniteElement("Discontinuous Lagrange", "triangle", 1)
 P0 = ufl.FiniteElement("Discontinuous Lagrange", "triangle", 0)
 CR1 = ufl.FiniteElement("Crouzeix-Raviart", "triangle", 1)
 CCR = ufl.VectorElement(ccr_element)
+CCR2 = ufl.VectorElement(basix.ufl_wrapper.BasixElement(ccr2))
 
 hs = []
 th_errors = []
 cr_errors = []
+new_errors = []
 for i in range(1, 6):
     N = 2 ** i
 
@@ -243,13 +299,18 @@ for i in range(1, 6):
 
     hs.append(1 / N)
     th_errors.append(solve_error(msh, P2, P1))
-    cr_errors.append(solve_error(msh, CCR, CR1))
+    # cr_errors.append(solve_error(msh, CCR, CR1))
+    new_errors.append(solve_error(msh, CCR2, DP1))
+    # new_errors.append(solve_error(msh, CCR2, CR1))
+
+print(new_errors)
 
 plt.figure(figsize=(17, 5))
 for i, ylabel in enumerate(["u-u_h", "\\operatorname{div}(u-u_h)", "p-p_h"]):
     plt.subplot(1, 3, i + 1)
     plt.plot(hs, [j[i] for j in th_errors], "bo-")
-    plt.plot(hs, [j[i] for j in cr_errors], "gs-")
+    # plt.plot(hs, [j[i] for j in cr_errors], "gs-")
+    plt.plot(hs, [j[i] for j in new_errors], "r^-")
 
     plt.xscale("log")
     plt.yscale("log")
@@ -258,7 +319,7 @@ for i, ylabel in enumerate(["u-u_h", "\\operatorname{div}(u-u_h)", "p-p_h"]):
     plt.xlabel("$h$")
     plt.ylabel(f"$\\|{ylabel}\\|_2$")
 
-    plt.legend(["Taylor-Hood", "Crouzeix-Raviart"])
+    plt.legend(["Taylor-Hood", "NEW"])
 
 plt.savefig("demo_custom-elements_plot.png")
 # -
