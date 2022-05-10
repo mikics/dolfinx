@@ -10,7 +10,7 @@
 
 # # Defining custom finite elements
 #
-# This demo ({download}`demo_custom_element.py`) illustrates how to:
+# This demo ({download}`demo_custom-elements.py`) illustrates how to:
 #
 # - Define custom elements using Basix
 #
@@ -25,6 +25,7 @@ from petsc4py import PETSc
 from mpi4py import MPI
 import basix
 import basix.ufl_wrapper
+import matplotlib.pylab as plt
 # -
 
 # ## Defining a Mardal-Tai-Winter element
@@ -206,3 +207,71 @@ element = basix.create_custom_element(
 
 ccr_element = basix.ufl_wrapper.BasixElement(element)
 # -
+
+# ## Comparing elements for a Stokes problem
+# Both the custom elements we have defined in this demo are designed to be used to solve Stokes
+# problems. To demonstrate how we can use these custom elements, we use them to solve Stokes
+# problems with a known analytic solution on a range of meshes, and look at how their convergence
+# rates compare.
+#
+# We begin by defining a function that, given a mixed function space as input, returns the error
+# when the problem is solved using that space.
+
+
+# +
+def solve_error(mixed_space, h):
+    import random
+    return random.random() * h
+# -
+
+# We now use this function on a range of meshes with Taylor-Hood, Mardal-Tai-Winther, and
+# Crouzeix-Raviart elements, then plot the results.
+
+# +
+hs = []
+th_errors = []
+mtw_errors = []
+cr_errors = []
+for i in range(1, 6):
+    N = 2 ** i
+
+    msh = create_rectangle(MPI.COMM_WORLD,
+                           [np.array([0, 0]), np.array([1, 1])],
+                           [32, 32],
+                           CellType.triangle, GhostMode.none)
+
+    P2 = ufl.VectorElement("Lagrange", "triangle", 2)
+    P1 = ufl.FiniteElement("Lagrange", "triangle", 1)
+    P0 = ufl.FiniteElement("Discontinuous Lagrange", "triangle", 0)
+    CR1 = ufl.FiniteElement("Crouzeix-Raviart", "triangle", 1)
+
+    taylor_hood = fem.FunctionSpace(msh, P2 * P1)
+    mtw = fem.FunctionSpace(msh, mtw_element * P0)
+    cr = fem.FunctionSpace(msh, ccr_element * CR1)
+
+    hs.append(1 / N)
+    th_errors.append(solve_error(taylor_hood, 1 / N))
+    mtw_errors.append(solve_error(mtw, 1 / N))
+    cr_errors.append(solve_error(cr, 1 / N))
+
+plt.plot(hs, th_errors, "bo-")
+plt.plot(hs, mtw_errors, "r^-")
+plt.plot(hs, cr_errors, "gs-")
+
+
+plt.xscale("log")
+plt.yscale("log")
+plt.axis("equal")
+plt.xlim(plt.xlim()[::-1])
+plt.xlabel("$h$")
+plt.ylabel("Error of solution")
+
+plt.legend(["Taylor-Hood", "Mardal-Tai-Winther", "Crouzeix-Raviart"])
+
+plt.savefig("demo_custom-elements_plot.png")
+# -
+
+# ![](demo_custom-elements_plot.png)
+#
+# In the plot it can be seen that the *** element acheives the best rate of convergence.
+
