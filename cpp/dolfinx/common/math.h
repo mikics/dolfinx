@@ -77,12 +77,10 @@ auto det(const T* A, std::array<std::size_t, 2> shape)
     // Leibniz formula combined with Kahan’s method for accurate
     // computation of 3 x 3 determinants
 
-    T w0 = difference_of_products(A[3 * 1 + 1], A[3 * 1 + 2], A[3 * 2 + 1],
-                                  A[3 * 2 + 2]);
-    T w1 = difference_of_products(A[3 * 1], A[3 * 1 + 2], A[3 * 2],
-                                  A[3 * 2 + 2]);
-    T w2 = difference_of_products(A[3 * 1], A[3 * 1 + 1], A[3 * 2],
-                                  A[3 * 2 + 1]);
+    T w0 = difference_of_products(A[3 + 1], A[3 + 2], A[3 * 2 + 1],
+                                  A[2 * 3 + 2]);
+    T w1 = difference_of_products(A[3], A[3 + 2], A[3 * 2], A[3 * 2 + 2]);
+    T w2 = difference_of_products(A[3], A[3 + 1], A[3 * 2], A[3 * 2 + 1]);
     T w3 = difference_of_products(A[0], A[1], w1, w0);
     T w4 = std::fma(A[2], w2, w3);
     return w4;
@@ -91,6 +89,45 @@ auto det(const T* A, std::array<std::size_t, 2> shape)
     throw std::runtime_error("math::det is not implemented for "
                              + std::to_string(A[0]) + "x" + std::to_string(A[1])
                              + " matrices.");
+  }
+}
+
+/// Compute the determinant of a small matrix (1x1, 2x2, or 3x3)
+/// @note Tailored for use in computations using the Jacobian
+/// @param[in] A The matrix tp compute the determinant of
+/// @return The determinate of @p A
+template <typename Matrix>
+auto det(const Matrix& A)
+{
+  static_assert(Matrix::static_layout == xt::layout_type::row_major,
+                "Container must use row-major storage.");
+
+  using value_type = typename Matrix::value_type;
+  assert(A.shape(0) == A.shape(1));
+  assert(A.dimension() == 2);
+
+  const int nrows = A.shape(0);
+  switch (nrows)
+  {
+  case 1:
+    return A(0, 0);
+  case 2:
+    return difference_of_products(A(0, 0), A(0, 1), A(1, 0), A(1, 1));
+  case 3:
+  {
+    // Leibniz formula combined with Kahan’s method for accurate
+    // computation of 3 x 3 determinants
+    value_type w0 = difference_of_products(A(1, 1), A(1, 2), A(2, 1), A(2, 2));
+    value_type w1 = difference_of_products(A(1, 0), A(1, 2), A(2, 0), A(2, 2));
+    value_type w2 = difference_of_products(A(1, 0), A(1, 1), A(2, 0), A(2, 1));
+    value_type w3 = difference_of_products(A(0, 0), A(0, 1), w1, w0);
+    value_type w4 = std::fma(A(0, 2), w2, w3);
+    return w4;
+  }
+  default:
+    throw std::runtime_error("math::det is not implemented for "
+                             + std::to_string(A.shape(0)) + "x"
+                             + std::to_string(A.shape(1)) + " matrices.");
   }
 }
 
@@ -112,7 +149,7 @@ void inv(const U& A, V&& B)
     break;
   case 2:
   {
-    value_type idet = 1. / det(A.data(), {A.shape(0), A.shape(1)});
+    value_type idet = 1. / det(A);
     B(0, 0) = idet * A(1, 1);
     B(0, 1) = -idet * A(0, 1);
     B(1, 0) = -idet * A(1, 0);
