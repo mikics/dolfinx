@@ -53,19 +53,15 @@ T difference_of_products(T a, T b, T c, T d) noexcept
   return diff + err;
 }
 
-/// Compute the determinant of a small matrix (1x1, 2x2, or 3x3)
-/// @note Tailored for use in computations using the Jacobian
+/// @brief Compute the determinant of a small matrix (1x1, 2x2, or 3x3).
 /// @param[in] A The matrix to compute the determinant of. Row-major
 /// storage.
-/// @param[in] shape The shape of `A`
-/// @return The determinate of `A`
+/// @param[in] n Number of rows.
+/// @return The determinant of `A`,
 template <typename T>
-auto det(const T* A, std::array<std::size_t, 2> shape)
+auto det(const T* A, std::size_t n)
 {
-  assert(shape[0] == shape[1]);
-
-  // const int nrows = shape[0];
-  switch (shape[0])
+  switch (n)
   {
   case 1:
     return *A;
@@ -77,17 +73,19 @@ auto det(const T* A, std::array<std::size_t, 2> shape)
     // Leibniz formula combined with Kahan’s method for accurate
     // computation of 3 x 3 determinants
 
-    T w0 = difference_of_products(A[3 + 1], A[3 + 2], A[3 * 2 + 1],
+    T w0 = difference_of_products(A[1 * 3 + 1], A[1 * 3 + 2], A[2 * 3 + 1],
                                   A[2 * 3 + 2]);
-    T w1 = difference_of_products(A[3], A[3 + 2], A[3 * 2], A[3 * 2 + 2]);
-    T w2 = difference_of_products(A[3], A[3 + 1], A[3 * 2], A[3 * 2 + 1]);
+    T w1 = difference_of_products(A[1 * 3], A[1 * 3 + 2], A[2 * 3],
+                                  A[2 * 3 + 2]);
+    T w2 = difference_of_products(A[1 * 3], A[1 * 3 + 1], A[2 * 3],
+                                  A[2 * 3 + 1]);
     T w3 = difference_of_products(A[0], A[1], w1, w0);
     T w4 = std::fma(A[2], w2, w3);
     return w4;
   }
   default:
     throw std::runtime_error("math::det is not implemented for "
-                             + std::to_string(A[0]) + "x" + std::to_string(A[1])
+                             + std::to_string(n) + "x" + std::to_string(n)
                              + " matrices.");
   }
 }
@@ -101,6 +99,10 @@ auto det(const Matrix& A)
 {
   static_assert(Matrix::static_layout == xt::layout_type::row_major,
                 "Container must use row-major storage.");
+
+  // return det(A.data(), {A.shape(0), A.shape(1)});
+  if (A.size() != A.shape(0) * A.shape(1))
+    throw std::runtime_error("Must be a view");
 
   using value_type = typename Matrix::value_type;
   assert(A.shape(0) == A.shape(1));
@@ -149,7 +151,7 @@ void inv(const U& A, V&& B)
     break;
   case 2:
   {
-    value_type idet = 1. / det(A);
+    value_type idet = 1. / math::det(A);
     B(0, 0) = idet * A(1, 1);
     B(0, 1) = -idet * A(0, 1);
     B(1, 0) = -idet * A(1, 0);
@@ -163,7 +165,7 @@ void inv(const U& A, V&& B)
     value_type w2 = difference_of_products(A(1, 0), A(1, 1), A(2, 0), A(2, 1));
     value_type w3 = difference_of_products(A(0, 0), A(0, 1), w1, w0);
     value_type det = std::fma(A(0, 2), w2, w3);
-    assert(det != 0.);
+    assert(det != 0.0);
     value_type idet = 1 / det;
 
     B(0, 0) = w0 * idet;
@@ -225,7 +227,16 @@ void pinv(const U& A, V&& P)
   assert(P.shape(1) == shape[0]);
   assert(P.shape(0) == shape[1]);
   using T = typename U::value_type;
-  if (shape[1] == 2)
+  switch (shape[1])
+  {
+  case 1:
+  {
+    auto res = std::transform_reduce(A.begin(), A.end(), 0., std::plus<T>(),
+                                     [](const auto v) { return v * v; });
+    P = (1 / res) * xt::transpose(A);
+    break;
+  }
+  case 2:
   {
     xt::xtensor_fixed<T, xt::xshape<2, 3>> AT;
     xt::xtensor_fixed<T, xt::xshape<2, 2>> ATA;
@@ -238,15 +249,9 @@ void pinv(const U& A, V&& P)
     dolfinx::math::dot(AT, A, ATA);
     dolfinx::math::inv(ATA, Inv);
     dolfinx::math::dot(Inv, AT, P);
+    break;
   }
-  else if (shape[1] == 1)
-  {
-    auto res = std::transform_reduce(A.begin(), A.end(), 0., std::plus<T>(),
-                                     [](const auto v) { return v * v; });
-    P = (1 / res) * xt::transpose(A);
-  }
-  else
-  {
+  default:
     throw std::runtime_error("math::pinv is not implemented for "
                              + std::to_string(A.shape(0)) + "x"
                              + std::to_string(A.shape(1)) + " matrices.");

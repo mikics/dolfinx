@@ -122,7 +122,7 @@ void CoordinateElement::pull_back_nonaffine(
   xt::xtensor<double, 2> dphi({tdim, num_xnodes});
   xt::xtensor<double, 2> Xk({1, tdim});
   std::array<double, 3> xk = {0, 0, 0};
-  xt::xtensor<double, 1> dX = xt::empty<double>({tdim});
+  std::array<double, 3> dX;
   xt::xtensor<double, 2> J({gdim, tdim});
   xt::xtensor<double, 2> K({tdim, gdim});
   xt::xtensor<double, 4> basis(_element->tabulate_shape(1, 1));

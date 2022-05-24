@@ -398,13 +398,33 @@ public:
           X, K, fem::CoordinateElement::x0(cell_geometry), x);
     };
 
+    auto detJ_eval = [gdim, tdim](const auto& J, auto p)
+    {
+      std::array<double, 9> Jwork;
+      if (gdim == tdim)
+      {
+        // J
+        for (std::size_t i = 0; i < gdim; ++i)
+          for (std::size_t j = 0; j < tdim; ++j)
+            Jwork[i * tdim + j] = J(p, i, j);
+      }
+      else
+      {
+        // J^T. J
+        for (std::size_t i = 0; i < tdim; ++i)
+          for (std::size_t j = 0; j < tdim; ++j)
+            for (std::size_t k = 0; k < gdim; ++k)
+              Jwork[i * tdim + j] = J(p, k, i) * J(p, k, j);
+      }
+      return math::det(Jwork.data(), tdim);
+    };
+
     xt::xtensor<double, 2> dphi;
     xt::xtensor<double, 2> X({x.shape(0), tdim});
     xt::xtensor<double, 3> J = xt::zeros<double>({x.shape(0), gdim, tdim});
     xt::xtensor<double, 3> K = xt::zeros<double>({x.shape(0), tdim, gdim});
     xt::xtensor<double, 1> detJ = xt::zeros<double>({x.shape(0)});
     xt::xtensor<double, 4> phi(cmap.tabulate_shape(1, 1));
-
     xt::xtensor<double, 2> _Xp({1, tdim});
     for (std::size_t p = 0; p < cells.size(); ++p)
     {
@@ -432,19 +452,16 @@ public:
       if (cmap.is_affine())
       {
         pull_back_affine(_Xp, coordinate_dofs, _J, _K, xp);
-        detJ[p]
-            = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(_J);
+        detJ[p] = detJ_eval(J, p);
       }
       else
       {
         cmap.pull_back_nonaffine(_Xp, xp, coordinate_dofs);
         cmap.tabulate(1, _Xp, phi);
         dphi = xt::view(phi, xt::range(1, tdim + 1), 0, xt::all(), 0);
-        dolfinx::fem::CoordinateElement::compute_jacobian(dphi, coordinate_dofs,
-                                                          _J);
-        dolfinx::fem::CoordinateElement::compute_jacobian_inverse(_J, _K);
-        detJ[p]
-            = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(_J);
+        CoordinateElement::compute_jacobian(dphi, coordinate_dofs, _J);
+        CoordinateElement::compute_jacobian_inverse(_J, _K);
+        detJ[p] = detJ_eval(J, p);
       }
       xt::row(X, p) = xt::row(_Xp, 0);
     }

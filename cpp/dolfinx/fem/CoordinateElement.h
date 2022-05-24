@@ -122,24 +122,6 @@ public:
       math::pinv(J, K);
   }
 
-  /// Compute the determinant of the Jacobian
-  /// @param[in] J Jacobian (shape=(gdim, tdim))
-  /// @return Determinant of `J`
-  template <typename U>
-  static double compute_jacobian_determinant(const U& J)
-  {
-    if (J.shape(0) == J.shape(1))
-      return math::det(J.data(), {J.shape(0), J.shape(1)});
-    else
-    {
-      using T = typename U::value_type;
-      auto B = xt::transpose(J);
-      xt::xtensor<T, 2> BA = xt::zeros<T>({B.shape(0), J.shape(1)});
-      math::dot(B, J, BA);
-      return std::sqrt(math::det(BA.data(), {BA.shape(0), BA.shape(1)}));
-    }
-  }
-
   /// Compute and return the dof layout
   ElementDofLayout create_dof_layout() const;
 

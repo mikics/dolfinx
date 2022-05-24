@@ -505,7 +505,7 @@ mesh::entities_to_geometry(const Mesh& mesh, int dim,
 
       // Midpoint direction should be opposite to normal, hence this
       // should be negative. Switch points if not.
-      if (math::det(a.data(), {3, 3}) > 0.0)
+      if (math::det(a.data(), 3) > 0.0)
       {
         std::swap(geometry_idx[i * num_vertices + 1],
                   geometry_idx[i * num_vertices + 2]);

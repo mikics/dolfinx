@@ -11,7 +11,9 @@
 #include "DofMap.h"
 #include "FiniteElement.h"
 #include "FunctionSpace.h"
+#include <array>
 #include <dolfinx/common/IndexMap.h>
+#include <dolfinx/common/math.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <functional>
 #include <numeric>
@@ -244,6 +246,27 @@ void interpolate_nonmatching_maps(Function<T>& u1, const Function<T>& u0,
   xt::xtensor<double, 3> K({X.shape(0), tdim, gdim});
   std::vector<double> detJ(X.shape(0));
 
+  auto detJ_eval = [gdim, tdim](const auto& J, auto p)
+  {
+    std::array<double, 9> Jwork;
+    if (gdim == tdim)
+    {
+      // J
+      for (std::size_t i = 0; i < tdim; ++i)
+        for (std::size_t j = 0; j < tdim; ++j)
+          Jwork[i * tdim + j] = J(p, i, j);
+    }
+    else
+    {
+      // J^T. J
+      for (std::size_t i = 0; i < tdim; ++i)
+        for (std::size_t j = 0; j < tdim; ++j)
+          for (std::size_t k = 0; k < gdim; ++k)
+            Jwork[i * tdim + j] = J(p, k, i) * J(p, k, j);
+    }
+    return math::det(Jwork.data(), tdim);
+  };
+
   // Get interpolation operator
   const xt::xtensor<double, 2>& Pi_1 = element1->interpolation_operator();
 
@@ -284,7 +307,7 @@ void interpolate_nonmatching_maps(Function<T>& u1, const Function<T>& u0,
       auto _J = xt::view(J, p, xt::all(), xt::all());
       cmap.compute_jacobian(dphi, coordinate_dofs, _J);
       cmap.compute_jacobian_inverse(_J, xt::view(K, p, xt::all(), xt::all()));
-      detJ[p] = cmap.compute_jacobian_determinant(_J);
+      detJ[p] = detJ_eval(J, p);
     }
 
     // Get evaluated basis on reference, apply DOF transformations, and
@@ -547,6 +570,27 @@ void interpolate(Function<T>& u, const xt::xarray<T>& f,
         apply_inverse_transpose_dof_transformation
         = element->get_dof_transformation_function<T>(true, true);
 
+    auto detJ_eval = [gdim, tdim](const auto& J, auto p)
+    {
+      std::array<double, 9> Jwork;
+      if (gdim == tdim)
+      {
+        // J
+        for (std::size_t i = 0; i < gdim; ++i)
+          for (std::size_t j = 0; j < tdim; ++j)
+            Jwork[i * tdim + j] = J(p, i, j);
+      }
+      else
+      {
+        // J^T. J
+        for (std::size_t i = 0; i < tdim; ++i)
+          for (std::size_t j = 0; j < tdim; ++j)
+            for (std::size_t k = 0; k < gdim; ++k)
+              Jwork[i * tdim + j] = J(p, k, i) * J(p, k, j);
+      }
+      return math::det(Jwork.data(), tdim);
+    };
+
     // Get interpolation operator
     const xt::xtensor<double, 2>& Pi = element->interpolation_operator();
 
@@ -575,8 +619,7 @@ void interpolate(Function<T>& u, const xt::xarray<T>& f,
                               xt::view(J, p, xt::all(), xt::all()));
         cmap.compute_jacobian_inverse(xt::view(J, p, xt::all(), xt::all()),
                                       xt::view(K, p, xt::all(), xt::all()));
-        detJ[p] = cmap.compute_jacobian_determinant(
-            xt::view(J, p, xt::all(), xt::all()));
+        detJ[p] = detJ_eval(J, p);
       }
 
       xtl::span<const std::int32_t> dofs = dofmap->cell_dofs(cell);

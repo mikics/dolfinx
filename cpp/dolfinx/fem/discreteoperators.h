@@ -256,6 +256,27 @@ void interpolation_matrix(const fem::FunctionSpace& V0,
       = {X.shape(0), (std::size_t)element1->value_size(), space_dim0};
   auto _A = xt::adapt(A, shape);
 
+  auto detJ_eval = [gdim, tdim](const auto& J, auto p)
+  {
+    std::array<double, 9> Jwork;
+    if (gdim == tdim)
+    {
+      // J
+      for (std::size_t i = 0; i < tdim; ++i)
+        for (std::size_t j = 0; j < tdim; ++j)
+          Jwork[i * tdim + j] = J(p, i, j);
+    }
+    else
+    {
+      // J^T. J
+      for (std::size_t i = 0; i < tdim; ++i)
+        for (std::size_t j = 0; j < tdim; ++j)
+          for (std::size_t k = 0; k < gdim; ++k)
+            Jwork[i * tdim + j] = J(p, k, i) * J(p, k, j);
+    }
+    return math::det(Jwork.data(), tdim);
+  };
+
   // Iterate over mesh and interpolate on each cell
   auto cell_map = mesh->topology().index_map(tdim);
   assert(cell_map);
@@ -279,7 +300,7 @@ void interpolation_matrix(const fem::FunctionSpace& V0,
       auto _J = xt::view(J, p, xt::all(), xt::all());
       cmap.compute_jacobian(dphi, _coordinate_dofs, _J);
       cmap.compute_jacobian_inverse(_J, xt::view(K, p, xt::all(), xt::all()));
-      detJ[p] = cmap.compute_jacobian_determinant(_J);
+      detJ[p] = detJ_eval(J, p);
     }
 
     // Get evaluated basis on reference, apply DOF transformations, and
