@@ -13,20 +13,23 @@
 #
 # First of all, let's import the modules that will be used:
 
-# +
-from petsc4py import PETSc
-from mpi4py import MPI
-from dolfinx.io.gmshio import model_to_mesh
-from dolfinx.io import VTXWriter
-from dolfinx import fem, mesh, plot
-import ufl
-from scipy.special import jv, jvp
-from mesh_sphere_axis import generate_mesh_sphere_axis
-import numpy as np
-from functools import partial
 import sys
+from functools import partial
 from math import ceil
 from time import time
+
+import numpy as np
+from mesh_sphere_axis import generate_mesh_sphere_axis
+from scipy.special import jv, jvp
+
+import ufl
+from dolfinx import fem, mesh, plot
+from dolfinx.io import VTXWriter
+from dolfinx.io.gmshio import model_to_mesh
+
+from mpi4py import MPI
+# +
+from petsc4py import PETSc
 
 t0 = time()
 
@@ -480,6 +483,8 @@ Esh_rz_m_dg = fem.Function(V_dg)
 # Total field
 Eh_m = fem.Function(V)
 Esh = fem.Function(V)
+Esh_post = fem.Function(V)
+Esh_proc = fem.Function(V)
 
 n = ufl.FacetNormal(domain)
 n_3d = ufl.as_vector((n[0], n[1], 0))
@@ -563,16 +568,8 @@ for n in range(int(ceil(len(m_list) / num_procs))):
         # Define scattered magnetic field
         Hsh_m = 1j * curl_axis(Esh_m, m, rho) / (Z0 * k0 * n_bkg)
 
-        # Total electric field
+        # Total electric field from m-th harmonic
         Eh_m.x.array[:] = Eb_m.x.array[:] + Esh_m.x.array[:]
-
-        if m == 0:
-
-            Esh.x.array[:] = Esh_m.x.array[:] * np.exp(- 1j * m * phi)
-
-        elif m == m_list[0]:
-
-            Esh.x.array[:] = 2 * Esh_m.x.array[:] * np.exp(- 1j * m * phi)
 
         # Efficiencies calculation
 
@@ -583,12 +580,16 @@ for n in range(int(ceil(len(m_list) / num_procs))):
             Q = 2 * np.pi * eps_au.imag * k0 * (
                 ufl.inner(Eh_m, Eh_m)) / Z0 / n_bkg
 
+            Esh_post.x.array[:] = 2 * Esh_m.x.array[:] * np.exp(- 1j * m * phi)
+
         else:
 
             P = np.pi * ufl.inner(ufl.cross(Esh_m,
                                             ufl.conj(Hsh_m)), n_3d) * marker
             Q = np.pi * eps_au.imag * k0 * (
                 ufl.inner(Eh_m, Eh_m)) / Z0 / n_bkg
+
+            Esh_post.x.array[:] = Esh_m.x.array[:] * np.exp(- 1j * m * phi)
 
         q_abs_fenics_m = (fem.assemble_scalar(
             fem.form(Q * rho * dAu)) / gcs / I0).real
@@ -601,15 +602,18 @@ for n in range(int(ceil(len(m_list) / num_procs))):
 
             q_abs_fenics_proc = q_abs_fenics_m
             q_sca_fenics_proc = q_sca_fenics_m
+            Esh_proc.x.array[:] = Esh_post.x.array[:]
 
         else:
             q_abs_fenics_proc += q_abs_fenics_m
             q_sca_fenics_proc += q_sca_fenics_m
+            Esh_proc.x.array[:] += Esh_post.x.array[:]
 
 
 MPI.COMM_WORLD.barrier()
 q_abs_fenics = MPI.COMM_WORLD.allreduce(q_abs_fenics_proc, op=MPI.SUM)
 q_sca_fenics = MPI.COMM_WORLD.allreduce(q_sca_fenics_proc, op=MPI.SUM)
+Esh.x.array[:] = MPI.COMM_WORLD.allreduce(Esh_proc.x.array[:], op=MPI.SUM)
 
 q_ext_fenics = q_abs_fenics + q_sca_fenics
 # -
@@ -668,11 +672,11 @@ if have_pyvista:
 
     V_grid.point_data["u"] = Esh_r_values
 
-    pyvista.set_jupyter_backend("pythreejs")
+    pyvista.set_jupyter_backend("ipygany")
     plotter = pyvista.Plotter()
 
     plotter.add_text("magnitude", font_size=12, color="black")
-    plotter.add_mesh(V_grid.copy(), show_edges=True)
+    plotter.add_mesh(V_grid.copy(), show_edges=False)
     plotter.view_xy()
     plotter.link_views()
 
