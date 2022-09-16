@@ -264,7 +264,7 @@ sub_comm.barrier()
 # Now we define some other problem specific parameters:
 
 # Wavelength of the background field
-wl0_arr = np.linspace(0.4, 0.8, 10)
+wl0_arr = np.linspace(0.4, 0.8, 20)
 
 for n in range(int(ceil(wl0_arr.shape[0] / num_sub_comm))):
 
