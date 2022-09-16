@@ -363,20 +363,17 @@ scatt_tag = 4
 
 model = None
 gmsh.initialize(sys.argv)
-if MPI.COMM_WORLD.rank == 0:
 
-    # Mesh generation
-    model = generate_mesh_sphere_axis(
-        radius_sph, radius_scatt, radius_dom, radius_pml,
-        in_sph_size, on_sph_size, scatt_size, pml_size,
-        au_tag, bkg_tag, pml_tag, scatt_tag)
+# Mesh generation
+model = generate_mesh_sphere_axis(
+    radius_sph, radius_scatt, radius_dom, radius_pml,
+    in_sph_size, on_sph_size, scatt_size, pml_size,
+    au_tag, bkg_tag, pml_tag, scatt_tag)
 
-model = MPI.COMM_WORLD.bcast(model, root=0)
 domain, cell_tags, facet_tags = model_to_mesh(
-    model, MPI.COMM_WORLD, 0, gdim=2)
+    model, MPI.COMM_SELF, 0, gdim=2)
 
 gmsh.finalize()
-MPI.COMM_WORLD.barrier()
 # -
 
 # Let's have a visual check of the mesh and of the subdomains
@@ -512,7 +509,11 @@ phi = 0
 # We can now solve our problem for all the chosen harmonic numbers:
 
 # +
-for m in m_list:
+
+num_procs = MPI.COMM_WORLD.size
+
+if MPI.COMM_WORLD.rank < len(m_list):
+    m = m_list[MPI.COMM_WORLD.rank]
 
     # Definition of Trial and Test functions
     Es_m = ufl.TrialFunction(V)
@@ -565,10 +566,6 @@ for m in m_list:
 
         Esh.x.array[:] = 2 * Esh_m.x.array[:] * np.exp(- 1j * m * phi)
 
-    else:
-
-        Esh.x.array[:] += 2 * Esh_m.x.array[:] * np.exp(- 1j * m * phi)
-
     # Efficiencies calculation
 
     if m == 0:  # initialize and do not add 2 factor
@@ -579,8 +576,6 @@ for m in m_list:
                              fem.form(Q * rho * dAu)) / gcs / I0).real
         q_sca_fenics_proc = (fem.assemble_scalar(
                              fem.form((P('+') + P('-')) * rho * dS(scatt_tag))) / gcs / I0).real
-        q_abs_fenics = domain.comm.allreduce(q_abs_fenics_proc, op=MPI.SUM)
-        q_sca_fenics = domain.comm.allreduce(q_sca_fenics_proc, op=MPI.SUM)
 
     elif m == m_list[0]:  # initialize and add 2 factor
         P = 2 * np.pi * ufl.inner(ufl.cross(Esh_m,
@@ -591,8 +586,6 @@ for m in m_list:
             fem.form(Q * rho * dAu)) / gcs / I0).real
         q_sca_fenics_proc = (fem.assemble_scalar(
                              fem.form((P('+') + P('-')) * rho * dS(scatt_tag))) / gcs / I0).real
-        q_abs_fenics = domain.comm.allreduce(q_abs_fenics_proc, op=MPI.SUM)
-        q_sca_fenics = domain.comm.allreduce(q_sca_fenics_proc, op=MPI.SUM)
 
     else:  # do not initialize and add 2 factor
         P = 2 * np.pi * ufl.inner(ufl.cross(Esh_m,
@@ -603,77 +596,79 @@ for m in m_list:
             fem.form(Q * rho * dAu)) / gcs / I0).real
         q_sca_fenics_proc = (fem.assemble_scalar(
                              fem.form((P('+') + P('-')) * rho * dS(scatt_tag))) / gcs / I0).real
-        q_abs_fenics += domain.comm.allreduce(q_abs_fenics_proc, op=MPI.SUM)
-        q_sca_fenics += domain.comm.allreduce(q_sca_fenics_proc, op=MPI.SUM)
 
-q_ext_fenics = q_abs_fenics + q_sca_fenics
-# -
+    MPI.COMM_WORLD.barrier()
 
-# Let's compare the analytical and numerical efficiencies, and let's print
-# the results:
+    q_abs_fenics = MPI.COMM_WORLD.allreduce(q_abs_fenics_proc, op=MPI.SUM)
+    q_sca_fenics = MPI.COMM_WORLD.allreduce(q_sca_fenics_proc, op=MPI.SUM)
 
-q_abs_analyt = 0.9622728008329892
-q_sca_analyt = 0.07770397394691526
-q_ext_analyt = q_abs_analyt + q_sca_analyt
+    q_ext_fenics = q_abs_fenics + q_sca_fenics
+    # -
 
-# +
-# Error calculation
-err_abs = np.abs(q_abs_analyt - q_abs_fenics) / q_abs_analyt
-err_sca = np.abs(q_sca_analyt - q_sca_fenics) / q_sca_analyt
-err_ext = np.abs(q_ext_analyt - q_ext_fenics) / q_ext_analyt
+    # Let's compare the analytical and numerical efficiencies, and let's print
+    # the results:
 
-if MPI.COMM_WORLD.rank == 0:
+    q_abs_analyt = 0.9622728008329892
+    q_sca_analyt = 0.07770397394691526
+    q_ext_analyt = q_abs_analyt + q_sca_analyt
 
-    print()
-    print(f"The analytical absorption efficiency is {q_abs_analyt}")
-    print(f"The numerical absorption efficiency is {q_abs_fenics}")
-    print(f"The error is {err_abs*100}%")
-    print()
-    print(f"The analytical scattering efficiency is {q_sca_analyt}")
-    print(f"The numerical scattering efficiency is {q_sca_fenics}")
-    print(f"The error is {err_sca*100}%")
-    print()
-    print(f"The analytical extinction efficiency is {q_ext_analyt}")
-    print(f"The numerical extinction efficiency is {q_ext_fenics}")
-    print(f"The error is {err_ext*100}%")
+    # +
+    # Error calculation
+    err_abs = np.abs(q_abs_analyt - q_abs_fenics) / q_abs_analyt
+    err_sca = np.abs(q_sca_analyt - q_sca_fenics) / q_sca_analyt
+    err_ext = np.abs(q_ext_analyt - q_ext_fenics) / q_ext_analyt
 
-    assert err_abs < 0.01
-    assert err_sca < 0.01
-    assert err_ext < 0.01
+    if MPI.COMM_WORLD.rank == 0:
 
+        print()
+        print(f"The analytical absorption efficiency is {q_abs_analyt}")
+        print(f"The numerical absorption efficiency is {q_abs_fenics}")
+        print(f"The error is {err_abs*100}%")
+        print()
+        print(f"The analytical scattering efficiency is {q_sca_analyt}")
+        print(f"The numerical scattering efficiency is {q_sca_fenics}")
+        print(f"The error is {err_sca*100}%")
+        print()
+        print(f"The analytical extinction efficiency is {q_ext_analyt}")
+        print(f"The numerical extinction efficiency is {q_ext_fenics}")
+        print(f"The error is {err_ext*100}%")
 
-Esh_rz, Esh_p = Esh.split()
+        assert err_abs < 0.01
+        assert err_sca < 0.01
+        assert err_ext < 0.01
 
-Esh_rz_dg = fem.Function(V_dg)
-Esh_r_dg = fem.Function(V_dg)
+    Esh_rz, Esh_p = Esh.split()
 
-# Interpolate over rho and z components over DG space
-Esh_rz_dg.interpolate(Esh_rz)
+    Esh_rz_dg = fem.Function(V_dg)
+    Esh_r_dg = fem.Function(V_dg)
 
-with VTXWriter(domain.comm, "sols/Es_rz.bp", Esh_rz_dg) as f:
-    f.write(0.0)
-with VTXWriter(domain.comm, "sols/Es_p.bp", Esh_p) as f:
-    f.write(0.0)
+    # Interpolate over rho and z components over DG space
+    Esh_rz_dg.interpolate(Esh_rz)
 
-if have_pyvista:
-    V_cells, V_types, V_x = plot.create_vtk_mesh(V_dg)
-    V_grid = pyvista.UnstructuredGrid(V_cells, V_types, V_x)
-    Esh_r_values = np.zeros((V_x.shape[0], 3), dtype=np.float64)
-    Esh_r_values[:, :domain.topology.dim] = \
-        Esh_r_dg.x.array.reshape(V_x.shape[0], domain.topology.dim).real
+    with VTXWriter(domain.comm, "sols/Es_rz.bp", Esh_rz_dg) as f:
+        f.write(0.0)
+    with VTXWriter(domain.comm, "sols/Es_p.bp", Esh_p) as f:
+        f.write(0.0)
 
-    V_grid.point_data["u"] = Esh_r_values
+    if have_pyvista:
+        V_cells, V_types, V_x = plot.create_vtk_mesh(V_dg)
+        V_grid = pyvista.UnstructuredGrid(V_cells, V_types, V_x)
+        Esh_r_values = np.zeros((V_x.shape[0], 3), dtype=np.float64)
+        Esh_r_values[:, :domain.topology.dim] = \
+            Esh_r_dg.x.array.reshape(V_x.shape[0], domain.topology.dim).real
 
-    pyvista.set_jupyter_backend("pythreejs")
-    plotter = pyvista.Plotter()
+        V_grid.point_data["u"] = Esh_r_values
 
-    plotter.add_text("magnitude", font_size=12, color="black")
-    plotter.add_mesh(V_grid.copy(), show_edges=True)
-    plotter.view_xy()
-    plotter.link_views()
+        pyvista.set_jupyter_backend("pythreejs")
+        plotter = pyvista.Plotter()
 
-    if not pyvista.OFF_SCREEN:
-        plotter.show()
-    else:
-        pyvista.start_xvfb()
-        plotter.screenshot("Esh_r.png", window_size=[800, 800])
+        plotter.add_text("magnitude", font_size=12, color="black")
+        plotter.add_mesh(V_grid.copy(), show_edges=True)
+        plotter.view_xy()
+        plotter.link_views()
+
+        if not pyvista.OFF_SCREEN:
+            plotter.show()
+        else:
+            pyvista.start_xvfb()
+            plotter.screenshot("Esh_r.png", window_size=[800, 800])
