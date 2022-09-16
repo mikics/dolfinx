@@ -14,21 +14,22 @@
 # First of all, let's import the modules that will be used:
 
 # +
-from math import ceil
-import sys
-from functools import partial
-
-import numpy as np
-from mesh_sphere_axis import generate_mesh_sphere_axis
-from scipy.special import jv, jvp
-
-import ufl
-from dolfinx import fem, mesh, plot
-from dolfinx.io import VTXWriter
-from dolfinx.io.gmshio import model_to_mesh
-
-from mpi4py import MPI
 from petsc4py import PETSc
+from mpi4py import MPI
+from dolfinx.io.gmshio import model_to_mesh
+from dolfinx.io import VTXWriter
+from dolfinx import fem, mesh, plot
+import ufl
+from scipy.special import jv, jvp
+from mesh_sphere_axis import generate_mesh_sphere_axis
+import numpy as np
+from functools import partial
+import sys
+from math import ceil
+from time import time
+
+t0 = time()
+
 
 try:
     import gmsh
@@ -680,3 +681,7 @@ if have_pyvista:
     else:
         pyvista.start_xvfb()
         plotter.screenshot("Esh_r.png", window_size=[800, 800])
+
+t1 = time()
+
+print(f"Elapsed time: {t1-t0:.2f} s")
