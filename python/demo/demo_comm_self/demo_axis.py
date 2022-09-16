@@ -366,7 +366,6 @@ bkg_tag = 2
 pml_tag = 3
 scatt_tag = 4
 
-model = None
 gmsh.initialize(sys.argv)
 
 # Mesh generation
