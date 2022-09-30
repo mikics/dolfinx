@@ -270,6 +270,7 @@ for n in range(int(ceil(wl0_arr.shape[0] / num_sub_comm))):
 
     if n * num_sub_comm + color < wl0_arr.shape[0]:
 
+        print(f"The index is {n * num_sub_comm + color}")
         wl0 = wl0_arr[n * num_sub_comm + color]
         print(f"n is: {n}, wl0 is: {wl0}")
 
